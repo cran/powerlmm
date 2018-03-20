@@ -12,7 +12,7 @@
 
 <meta name="author" content="Kristoffer Magnusson" />
 
-<meta name="date" content="2017-09-11" />
+<meta name="date" content="2018-03-20" />
 
 <title>A Tutorial on Using the Simulation Functions Included in powerlmm</title>
 
@@ -70,33 +70,33 @@ code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Inf
 
 <h1 class="title toc-ignore">A Tutorial on Using the Simulation Functions Included in powerlmm</h1>
 <h4 class="author"><em>Kristoffer Magnusson</em></h4>
-<h4 class="date"><em>2017-09-11</em></h4>
+<h4 class="date"><em>2018-03-20</em></h4>
 
 
 
-<p>This vignettes shows how you can further investigate your models using Monte Carlo simulations. In addition to reporting power, simulations allows you to investigate parameter bias, model misspecification, type 1 errors and convergence issues. For instance, even if the analytical power calculations work well, it can be useful to check the small sample properties of the models, e.g. estimates of cluster-level random effects with only a few clusters.</p>
+<p>This vignette shows how you can further investigate your models using Monte Carlo simulations. In addition to reporting power, simulations allows you to investigate parameter bias, model misspecification, Type I errors and convergence issues. For instance, even if the analytical power calculations work well, it can be useful to check the small sample properties of the model, e.g. estimates of cluster-level random effects with only a few clusters.</p>
 <div id="setup" class="section level2">
 <h2>Setup</h2>
-<p>The simulation-function accepts the same study setup-object that we’re used in the two- and three-level power vignettes. The analytical solution used by the <code>get_power</code>-function only have experimental support for partially nested three-level models. Therefore, this vignette will show how to simulate power for this model. However, the simulation-function support all models that are available in <em>powerlmm</em>.</p>
+<p>The simulation-function accepts the same study setup-object that we’ve used in the two- and three-level power vignettes. The simulation-function supports all models that are available in <strong>powerlmm</strong>. As an example we’ll investigate the partially nested three-level model.</p>
 </div>
 <div id="partially-nested-three-level-model" class="section level2">
 <h2>Partially nested three-level model</h2>
-<p>When doing simulations I recommend specifying the raw values to ensure all parameters are reasonable. Here I use estimates from a real clinical trial.</p>
+<p>When doing simulations it can be a good idea to specify the model using raw values, to ensure all parameters are reasonable. Here I use estimates from a real clinical trial.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">p &lt;-<span class="st"> </span><span class="kw">study_parameters</span>(<span class="dt">n1 =</span> <span class="dv">11</span>,
                       <span class="dt">n2 =</span> <span class="dv">10</span>,
                       <span class="dt">n3 =</span> <span class="dv">6</span>,
                       <span class="dt">fixed_intercept =</span> <span class="dv">37</span>,
-                      <span class="dt">fixed_slope =</span> -<span class="fl">0.64</span>,
+                      <span class="dt">fixed_slope =</span> <span class="op">-</span><span class="fl">0.64</span>,
                       <span class="dt">sigma_subject_intercept =</span> <span class="fl">2.8</span>,
                       <span class="dt">sigma_subject_slope =</span> <span class="fl">0.4</span>,
                       <span class="dt">sigma_cluster_intercept =</span> <span class="dv">0</span>,
-                      <span class="dt">cor_subject =</span> -<span class="fl">0.2</span>,
+                      <span class="dt">cor_subject =</span> <span class="op">-</span><span class="fl">0.2</span>,
                       <span class="dt">icc_slope =</span> <span class="fl">0.05</span>,
                       <span class="dt">sigma_error =</span> <span class="fl">2.6</span>,
                       <span class="dt">dropout =</span> <span class="kw">dropout_weibull</span>(<span class="dt">proportion =</span> <span class="fl">0.3</span>, 
-                                                <span class="dt">rate =</span> <span class="dv">1</span>/<span class="dv">2</span>),
+                                                <span class="dt">rate =</span> <span class="dv">1</span><span class="op">/</span><span class="dv">2</span>),
                       <span class="dt">partially_nested =</span> <span class="ot">TRUE</span>,
-                      <span class="dt">cohend =</span> -<span class="fl">0.8</span>)
+                      <span class="dt">cohend =</span> <span class="op">-</span><span class="fl">0.8</span>)
 
 p</code></pre></div>
 </div>
@@ -106,22 +106,27 @@ p</code></pre></div>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">x &lt;-<span class="st"> </span><span class="kw">get_power</span>(p)
 <span class="kw">get_monte_carlo_se</span>(x, <span class="dt">nsim =</span> <span class="kw">c</span>(<span class="dv">1000</span>, <span class="dv">2000</span>, <span class="dv">5000</span>))</code></pre></div>
 <p>We would need about 5000 simulation if we want our empirical power to be +/- 1% from the analytical power.</p>
-<p>Now, let’s run the simulation. First we need to write the <em>lme4</em>-formula, since the simulated data sets are analyzed using <code>lme4::lmer</code>. Then we pass the <code>study_parameters</code>-object to the <code>simulate</code> function, and when the simulation is finished we use <code>summary</code> to view the results. You can run the simulation in parallel by settings <code>cores</code> &gt; 1. However, parallelization relies on <code>parallel::mclapply</code> which does not support Windows. If you’re using Windows use <code>cores = 1</code>.</p>
+<p>Now, let’s run the simulation. First we need to write the <strong>lme4</strong>-formula, since the simulated data sets are analyzed using <code>lme4::lmer</code>. Then we pass the <code>study_parameters</code>-object to the <code>simulate</code> function, and when the simulation is finished we use <code>summary</code> to view the results. You can run the simulation in parallel by settings <code>cores</code> &gt; 1. The parallel computations will be done using the <strong>parallel</strong> package. If performed on a Windows machine <em>or</em> inside a GUI, then PSOCK clusters are used, if on Unix/macOS and the simulation is run non-interactively in a terminal then forking is used.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">f &lt;-<span class="st"> &quot;y ~ treatment * time + (1 + time | subject) + (0 + treatment:time | cluster)&quot;</span>
+
+cores &lt;-<span class="st"> </span>parallel<span class="op">::</span><span class="kw">detectCores</span>() <span class="co"># use all cores</span>
 
 res &lt;-<span class="st"> </span><span class="kw">simulate</span>(<span class="dt">object =</span> p,
                 <span class="dt">nsim =</span> <span class="dv">5000</span>,
                 <span class="dt">formula =</span> f,
                 <span class="dt">satterthwaite =</span> <span class="ot">TRUE</span>,
-                <span class="dt">progress =</span> <span class="ot">TRUE</span>,
-                <span class="dt">cores =</span> <span class="dv">1</span>,
+                <span class="dt">cores =</span> cores,
                 <span class="dt">save =</span> <span class="ot">FALSE</span>)
 
 <span class="kw">summary</span>(res)</code></pre></div>
+<div id="automatic-formula-creation" class="section level3">
+<h3>Automatic formula creation</h3>
+<p>It is also possible to automatically create the <code>formula</code> by leaving it blank. Then the <code>lmer-formula</code> is created by including the parameters that are not specified as <code>NA</code> or <code>NULL</code> in the model, see <code>?create_lmer_formula</code>. N.B., parameters specified as 0 are included in the model.</p>
+</div>
 </div>
 <div id="investigate-model-misspecification" class="section level2">
 <h2>Investigate model misspecification</h2>
-<p>Let’s compare the correct partially nested model to a two-level linear mixed model. The formula argument accepts a named list with a <code>correct</code> and <code>wrong</code> formula. By setting <code>cohend</code> to 0 the simulation results tells us the empirical type I error for the correct and misspecified model.</p>
+<p>Let’s compare the correct partially nested model to a two-level linear mixed-effects model. The formula argument accepts a named list with a <code>correct</code> and <code>wrong</code> formula. By setting <code>cohend</code> to 0 the simulation results tells us the empirical Type I errors for the correct and misspecified model.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">p &lt;-<span class="st"> </span><span class="kw">update</span>(p, <span class="dt">cohend =</span> <span class="dv">0</span>)
 
 f &lt;-<span class="st"> </span><span class="kw">list</span>(<span class="st">&quot;correct&quot;</span> =<span class="st"> &quot;y ~ treatment * time + (1 + time | subject) + (0 + treatment:time | cluster)&quot;</span>,
@@ -131,12 +136,11 @@ res &lt;-<span class="st"> </span><span class="kw">simulate</span>(<span class="
                 <span class="dt">nsim =</span> <span class="dv">5000</span>,
                 <span class="dt">formula =</span> f,
                 <span class="dt">satterthwaite =</span> <span class="ot">TRUE</span>,
-                <span class="dt">progress =</span> <span class="ot">TRUE</span>,
-                <span class="dt">cores =</span> <span class="dv">1</span>,
+                <span class="dt">cores =</span> cores,
                 <span class="dt">save =</span> <span class="ot">FALSE</span>)
 
 <span class="kw">summary</span>(res)</code></pre></div>
-<p>All of the parameters are summarized and presented for both models. Since we specified <code>satterthwaite = TRUE</code>, empirical power is both based on the Wald Z test and the Wald t test using Satterthwaite’s df approximation (from the lmerTest-package).</p>
+<p>All of the parameters are summarized and presented for both models. Since we specified <code>satterthwaite = TRUE</code>, empirical power is both based on the Wald Z test and the Wald <em>t</em> test using Satterthwaite’s <em>df</em> approximation (from the <strong>lmerTest</strong> package).</p>
 </div>
 <div id="compare-multiple-combinations-of-parameter-values" class="section level2">
 <h2>Compare multiple combinations of parameter values</h2>
@@ -145,17 +149,17 @@ res &lt;-<span class="st"> </span><span class="kw">simulate</span>(<span class="
                       <span class="dt">n2 =</span> <span class="dv">10</span>,
                       <span class="dt">n3 =</span> <span class="kw">c</span>(<span class="dv">6</span>, <span class="dv">12</span>),
                       <span class="dt">fixed_intercept =</span> <span class="dv">37</span>,
-                      <span class="dt">fixed_slope =</span> -<span class="fl">0.64</span>,
+                      <span class="dt">fixed_slope =</span> <span class="op">-</span><span class="fl">0.64</span>,
                       <span class="dt">sigma_subject_intercept =</span> <span class="fl">2.8</span>,
                       <span class="dt">sigma_subject_slope =</span> <span class="fl">0.4</span>,
                       <span class="dt">sigma_cluster_intercept =</span> <span class="dv">0</span>,
-                      <span class="dt">cor_subject =</span> -<span class="fl">0.2</span>,
+                      <span class="dt">cor_subject =</span> <span class="op">-</span><span class="fl">0.2</span>,
                       <span class="dt">icc_slope =</span> <span class="kw">c</span>(<span class="fl">0.05</span>, <span class="fl">0.1</span>),
                       <span class="dt">sigma_error =</span> <span class="fl">2.6</span>,
                       <span class="dt">dropout =</span> <span class="kw">dropout_weibull</span>(<span class="dt">proportion =</span> <span class="fl">0.3</span>, 
-                                                <span class="dt">rate =</span> <span class="dv">1</span>/<span class="dv">2</span>),
+                                                <span class="dt">rate =</span> <span class="dv">1</span><span class="op">/</span><span class="dv">2</span>),
                       <span class="dt">partially_nested =</span> <span class="ot">TRUE</span>,
-                      <span class="dt">cohend =</span> -<span class="kw">c</span>(<span class="fl">0.5</span>, <span class="fl">0.8</span>))
+                      <span class="dt">cohend =</span> <span class="op">-</span><span class="kw">c</span>(<span class="fl">0.5</span>, <span class="fl">0.8</span>))
 
 
 f &lt;-<span class="st"> &quot;y ~ treatment * time + (1 + time | subject) + (0 + treatment:time | cluster)&quot;</span>
@@ -164,14 +168,13 @@ res &lt;-<span class="st"> </span><span class="kw">simulate</span>(<span class="
                 <span class="dt">nsim =</span> <span class="dv">5000</span>,
                 <span class="dt">formula =</span> f,
                 <span class="dt">satterthwaite =</span> <span class="ot">TRUE</span>,
-                <span class="dt">progress =</span> <span class="ot">TRUE</span>,
-                <span class="dt">cores =</span> <span class="dv">1</span>,
+                <span class="dt">cores =</span> cores,
                 <span class="dt">save =</span> <span class="ot">FALSE</span>)</code></pre></div>
 <p>The setup and simulation is the same, except that we define vectors of values for some of the parameters. In this scenario we have a total of 2 * 2 * 2 = 8 different combination of parameter values. For each of the 8 setups <code>nsim</code> number of simulations will be performed. With multiple designs <code>summary</code> works a bit differently. Instead of summarizing all parameters, we now have to choose which parameters to summarize.</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># Summarize 'time:treatment' results </span>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># Summarize the 'time:treatment' results </span>
 <span class="kw">summary</span>(res, <span class="dt">para =</span> <span class="st">&quot;time:treatment&quot;</span>, <span class="dt">type =</span> <span class="st">&quot;fixed&quot;</span>, <span class="dt">model =</span> <span class="st">&quot;correct&quot;</span>)
 
-<span class="co"># Summarize cluster-level random slope </span>
+<span class="co"># Summarize the cluster-level random slope </span>
 <span class="kw">summary</span>(res, <span class="dt">para =</span> <span class="st">&quot;cluster_slope&quot;</span>, <span class="dt">type =</span> <span class="st">&quot;random&quot;</span>, <span class="dt">model =</span> <span class="st">&quot;correct&quot;</span>)</code></pre></div>
 </div>
 

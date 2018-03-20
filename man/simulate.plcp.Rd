@@ -5,13 +5,13 @@
 \alias{simulate.plcp_multi}
 \title{Perform a simulation study using a \code{study_parameters}-object}
 \usage{
-\method{simulate}{plcp}(object, nsim, seed = NULL, formula,
+\method{simulate}{plcp}(object, nsim, seed = NULL, formula = NULL,
   satterthwaite = FALSE, CI = FALSE, cores = 1, progress = FALSE,
-  save = FALSE, ...)
+  batch_progress = TRUE, ...)
 
-\method{simulate}{plcp_multi}(object, nsim, seed = NULL, formula,
+\method{simulate}{plcp_multi}(object, nsim, seed = NULL, formula = NULL,
   satterthwaite = FALSE, CI = FALSE, cores = 1, progress = FALSE,
-  save = FALSE, ...)
+  batch_progress = TRUE, ...)
 }
 \arguments{
 \item{object}{An object created by \code{\link{study_parameters}}.}
@@ -21,10 +21,12 @@
 \item{seed}{Currently ignored.}
 
 \item{formula}{\code{lme4::lmer} formula(s) used to analyze the data, see \emph{Details}.
-Should either be a character vector if one model is simulated.
+Should either be a character vector or named list if one model is simulated.
 It also possible to compare two models, e.g. a correct and a misspecified model,
 by passing the two formulas as a named list, with the names "wrong" and "correct".
-See \emph{Examples}.}
+See \emph{Examples}. If \code{NULL} the formula is made automatically,
+using \code{\link{create_lmer_formula}}, which does not support objects with multiple
+simulation setups.}
 
 \item{satterthwaite}{Logical; if \code{TRUE} Satterthwaite's degrees of freedom
 approximation will be used when computing \emph{p}-values. This is implemented using
@@ -33,18 +35,19 @@ the \code{lmerTest}-package. See \emph{Details}.}
 \item{CI}{Logical; if \code{TRUE} coverage rates for confidence intervals
 will be calculated. See \emph{Details}.}
 
-\item{cores}{Number of CPU cores to use. Parallelization is done using
-parallel::mclapply() which does not support \strong{Windows}. Use \code{cores = 1}
-if you're on Windows.}
+\item{cores}{Number of CPU cores to use. If called from a GUI environment (e.g. RStudio) or
+a computer running Microsoft Windows, PSOCK clusters will be used. If called from a
+non-interactive Unix environment forking is utilized.}
 
-\item{progress}{Logical; will display progress if \code{TRUE}. Currently
-ignored on \emph{Windows}. Package \code{pbmclapply} is used to display progress.
-\strong{N.B} using a progress bar will noticeably increase the simulation time.}
+\item{progress}{\code{logical}; will display progress if \code{TRUE}. Currently
+ignored on \emph{Windows}. Package \code{pbmclapply} is used to display progress,
+which relies on forking. \strong{N.B} using a progress bar will noticeably
+increase the simulation time, due to the added overhead.}
 
-\item{save}{Logical; if \code{TRUE} results will be saved to your working directory
-under the folder "save".}
+\item{batch_progress}{\code{logical}; if \code{TRUE} progress will be shown for
+simulations with multiple setups.}
 
-\item{...}{Optional arguments.}
+\item{...}{Optional arguments, see \emph{Saving} in \emph{Details} section.}
 }
 \description{
 Perform a simulation study using a \code{study_parameters}-object
@@ -62,15 +65,32 @@ The available model terms are:
  from 1 to the total number of clusters.
 }
 
-See \emph{Examples} and the simulation-vignette for formula examples.
+See \emph{Examples} and the simulation-vignette for formula examples. For
+\code{object}s that contain a single study setup, then the lmer formula
+can be created automatically using \code{\link{create_lmer_formula}}.
 
 \strong{Satterthwaite's approximation, and CI coverage}
 
-To decrease the simulation time Satterthwaite's dfs and the CIs' coverage rates
+To decrease the simulation time Satterthwaite's \emph{dfs} and the CIs' coverage rates
 will only be calculated for the test of 'time:treatment'-interaction.
 
 Confidence intervals are both calculated using profile likelihood and by
 the Wald approximation.
+
+\strong{Saving intermediate results for multi-sims}
+
+Objects with multi-sims can be save after each batch is finished. This is highly
+recommended when many designs are simulated. The following additional arguments
+control saving behavior:
+
+\itemize{
+ \item \code{'save'}, \code{logical}, if \code{TRUE} each batch is saved as a
+ \code{RDS}-file. Results are saved in your working directory, in the directory
+ specified by \code{save_folder}.
+ \item \code{'save_folder'} a \code{character} indicating the folder name. Default is \code{'save'}.
+ \item \code{'save_folder_create'},  \code{logical}, if \code{TRUE} then \code{save_folder}
+ will be created if it does not exist in your working directory.
+}
 }
 \examples{
 \dontrun{

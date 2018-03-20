@@ -13,7 +13,7 @@
 #'  will be a quadratic function of time. \code{tot_var} is the
 #'  percentage increase or decrease in total variance relative to baseline variance.
 #'
-#' The \code{plot} method returns a \code{\link{ggplot}} object.
+#' The \code{plot} method returns a \code{ggplot2::ggplot} object.
 #' @seealso \code{\link{plot.plcp_VPC}}
 #'
 #' @references Goldstein, H., Browne, W., & Rasbash, J. (2002).
@@ -43,7 +43,7 @@ get_VPC <- function(object) {
 #' @rdname get_VPC
 #' @export
 get_VPC.plcp <- function(object) {
-    paras <- object
+    paras <- NA_to_zero(object)
      u0 <- paras$sigma_subject_intercept
      u1 <- paras$sigma_subject_slope
      v0 <- paras$sigma_cluster_intercept
@@ -84,10 +84,10 @@ get_VPC.plcp_multi <- function(object) {
 #' @param x An object created with \code{\link{get_VPC}}
 #' @param ... Optional arguments, currently ignored.
 #'
-#' @importFrom ggsci scale_fill_d3 scale_color_d3
 #' @export
 
 plot.plcp_VPC <- function(x, ...) {
+     check_installed("ggplot2")
      res <- x
      res$tot_var <- NULL
 
@@ -104,15 +104,18 @@ plot.plcp_VPC <- function(x, ...) {
                                     "between-subjects (L2)",
                                     "within-subjects (L1)"))
 
-    ggplot2::ggplot(res, aes_string("time", "proportion", color = "level", fill = "level")) +
-        ggsci::scale_fill_d3() +
-        ggsci::scale_color_d3() +
-          geom_line() +
-          geom_point() +
-          labs(title = "Variance partitioning",
+    p <- ggplot2::ggplot(res, ggplot2::aes_string("time", "proportion", color = "level", fill = "level")) +
+        ggplot2::geom_line() +
+        ggplot2::geom_point() +
+        ggplot2::labs(title = "Variance partitioning",
                x = "Time point",
                y = "Proportion of total variance")
 
+    if(requireNamespace("ggsci", quietly = TRUE)) {
+       p <- p + ggsci::scale_fill_d3() +
+            ggsci::scale_color_d3()
+    }
+    p
 }
 
 #' Print method for \code{get_vpc}-objects
@@ -164,7 +167,7 @@ get_sds <- function(object, n = 1) {
 
 #' @export
 get_sds.plcp <- function(object, n = NULL) {
-    .p <- object
+    .p <- NA_to_zero(object)
     .p$retention <- NULL
     .p$n2 <- NULL
     .p <- .p[c("sigma_subject_intercept",
@@ -229,19 +232,20 @@ get_sds_ <- function(sigma_subject_intercept,
 #' @param ... Optional arguments.
 #' @export
 plot.plcp_sds <- function(x, ...) {
+     check_installed("ggplot2")
     .res <- x
      cs <- .res$SD_no_random_slopes[1]
 
      res <- .res
      res$time <- round(res$time,1)
 
-     p <- ggplot(res, aes_string("time", "SD_with_random_slopes")) +
-          geom_hline(aes_string(color = "'Random slopes = 0'",
+     p <- ggplot2::ggplot(res, ggplot2::aes_string("time", "SD_with_random_slopes")) +
+         ggplot2::geom_hline(ggplot2::aes_string(color = "'Random slopes = 0'",
                          yintercept = "SD_no_random_slopes")) +
-          geom_line(aes(color = "With random slopes")) +
-          geom_point(aes(color = "With random slopes")) +
-          scale_x_continuous(breaks = unique(res$time)) +
-          labs(y = "SD", x = "Time point",
+         ggplot2::geom_line(ggplot2::aes(color = "With random slopes")) +
+         ggplot2::geom_point(ggplot2::aes(color = "With random slopes")) +
+         ggplot2::scale_x_continuous(breaks = unique(res$time)) +
+         ggplot2::labs(y = "SD", x = "Time point",
                title = "SD per time point",
                color = "Model")
      # facet_grid(~cor_cluster + cor_subject, labeller = label_both)
@@ -293,7 +297,8 @@ get_correlation_matrix <- function(object) {
 
 #' @export
 get_correlation_matrix.plcp <- function(object) {
-    paras <- object
+    paras <- NA_to_zero(object)
+
 
     u0 <- paras$sigma_subject_intercept
     u1 <- paras$sigma_subject_slope
@@ -307,7 +312,6 @@ get_correlation_matrix.plcp <- function(object) {
     n1 <- paras$n1
     n2 <- paras$n2
     sx2 <- sum( (time - mean(time))^2)/n1
-
 
     X <- matrix(c(rep(1, n1), time), ncol = 2)
     Z <- X
@@ -324,6 +328,49 @@ get_correlation_matrix.plcp <- function(object) {
     class(V) <- append(class(V), "plcp_ICC2")
 
     V
+}
+
+
+#' Plot method for \code{get_correlation_matrix}-objects
+#'
+#' @param x An object created with \code{\link{get_correlation_matrix}}
+#' @param ... Optional arguments, currently ignored.
+#'
+#' @export
+
+
+plot.plcp_ICC2 <- function(x, ...) {
+    check_installed("ggplot2")
+    res <- as.data.frame(x)
+
+    breaks <- 1:ncol(res)
+    res <- reshape(res, varying = breaks,
+                   v.names = "cor",
+                   idvar = "time1",
+                   timevar = "time2",
+                   direction = "long")
+    res$time1 <- res$time1
+    res$time2 <- res$time2
+    res$cor2 <- round(res$cor, 2)
+
+    break_labs <- as.numeric(dimnames(x)[[1]])
+
+    p <- ggplot2::ggplot(res, ggplot2::aes_string("time1", "time2", color = "cor", fill = "cor")) +
+        ggplot2::geom_tile() +
+        ggplot2::geom_text(ggplot2::aes_string(label = "cor2"), hjust = "center", color = "black") +
+        ggplot2::scale_x_continuous(breaks = breaks, labels = break_labs) +
+        ggplot2::scale_y_continuous(breaks = breaks, labels = break_labs) +
+        ggplot2::labs(color = "Correlation", fill = "Correlation",
+             x = "Time", y = "Time",
+             title = "Subject-level correlation matrix") +
+        ggplot2::theme_minimal()
+
+    if(requireNamespace("viridis", quietly = TRUE)) {
+        p <- p + viridis::scale_fill_viridis() +
+            viridis::scale_color_viridis()
+    }
+    p
+
 }
 
 #' Print method for \code{get_correlation_matrix}-objects

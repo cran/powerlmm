@@ -7,7 +7,8 @@
 #' @param object An object created by \code{\link{study_parameters}}.
 #' @param ... Optional named arguments.
 #' @return Returns the proportion of slope variance at the third level as
-#' a numeric vector.
+#' a numeric vector. \code{NA} is returned for models with no slope variance
+#' as either level two or three.
 #' @export
 #'
 #' @examples
@@ -30,7 +31,10 @@ get_ICC_slope <- function(object, ...) {
 #' @export
 #'
 get_ICC_slope.default <- function(object = NULL, u1, v1, ...) {
-     v1^2/(v1^2 + u1^2)
+    u1[is.na(u1)] <- 0
+    x <- v1^2/(v1^2 + u1^2)
+    x[v1 == 0 & u1 == 0] <- 0
+    x
 }
 
 #' @export
@@ -71,6 +75,11 @@ get_var_ratio <- function(object, ...) {
 }
 #' @export
 get_var_ratio.default <- function(object=NULL, v1, u1, error, ...) {
+     #if(!(is.na(v1) && is.na(u1))) {
+         v1[is.na(v1) & !is.na(u1)] <- 0
+         u1[is.na(u1) & !is.na(v1)] <- 0
+     #}
+
      (v1^2 + u1^2)/(error^2)
 }
 #' @export
@@ -89,12 +98,12 @@ get_var_ratio.plcp_multi <- function(object, ...) {
 ##
 
 
-#' Calculates the amount of baseline variance at the subject level
+#' Calculate the subject-level ICC at pretest
 #'
 #' @param object An object created by \code{\link{study_parameters}}
 #' @param ... Optional named arguments.
 #'
-#' @return Returns the proportion of baseline variance at the subject level,
+#' @return Returns the proportion of baseline variance at the subject level (which also includes cluster-level variance),
 #' as a numeric vector.
 #' @export
 #'
@@ -116,7 +125,9 @@ get_ICC_pre_subjects <- function(object, ...) {
 }
 #' @export
 get_ICC_pre_subjects.default <- function(object = NULL, u0, v0, error, ...) {
-    u0^2/(u0^2 + v0^2 + error^2)
+    v0 <- ifelse(is.na(v0), 0, v0)
+
+    (u0^2 + v0^2)/(u0^2 + v0^2 + error^2)
 }
 #' @export
 get_ICC_pre_subjects.plcp <- function(object, ...) {
@@ -211,6 +222,28 @@ get_time_vector <- function(paras) {
      seq(0, paras$T_end, length.out = paras$n1)
 }
 
+
+# logic -------------------------------------------------------------------
+
+NA_or_zero <- function(x) {
+    x == 0 | is.na(x)
+}
+
+# convert NA paras to 0
+# used e.g. in get_SDS()
+NA_to_zero <- function(object) {
+    ind <- c("sigma_subject_intercept", "sigma_subject_slope", "cor_subject",
+             "sigma_cluster_intercept", "sigma_cluster_slope", "cor_cluster",
+             "sigma_error")
+
+    for(i in ind) {
+        x <- object[[i]]
+        object[[i]][is.na(x)] <- 0
+    }
+
+    object
+}
+
 # elapsed time --------------------------------------------------------------------
 elapsed_time <- function(object, ...) {
      UseMethod("elapsed_time")
@@ -237,6 +270,13 @@ print.elapsed_time <- function(x, ...) {
      print.data.frame(x)
      cat("# nsim: ", attr(x, "nsim"))
 }
+
+
+# check if approx equal --------------------------------------------------------------------
+is_approx <- function(x, y) {
+    abs(x - y) < .Machine$double.eps^0.5
+}
+
 
 # save multi-simulations --------------------------------------------------------
 save_res <- function(res, i) {
@@ -279,14 +319,14 @@ sum_missing_tx_time <- function(.d) {
 #' @param x An object of class \code{plcp}.
 #' @param n specifies which row \code{n} should be used if \code{object}
 #'  is a \code{data.frame} containing multiple setups.
-#' @param plot indicated what plot to show. If \code{1} the plot showing the treatment groups
-#' change over time will be shown, if \code{2} the missing data pattern will be shown,
-#' if \code{NULL} both plots will be shown.
+#' @param type indicated what plot to show. If \code{effect} the plot showing the treatment groups
+#' change over time will be shown, if \code{dropout} the missing data pattern will be shown,
+#' if \code{both} both plots will be shown.
 #'
 #' @param ... Optional arguments.
-#' @import ggplot2
 #' @export
-plot.plcp <- function(x, n = 1, plot = NULL, ...) {
+plot.plcp <- function(x, n = 1, type = "both", ...) {
+    check_installed("ggplot2")
     paras <- x
      if(is.data.frame(paras)) {
           paras <- as.list(paras[n,])
@@ -305,10 +345,10 @@ plot.plcp <- function(x, n = 1, plot = NULL, ...) {
                      treatment = rep(c(0, 1), each = length(y)))
      d$treatment <- factor(d$treatment, labels = c("Control", "Treatment"))
 
-     p1 <- ggplot(d, aes_string("time", "y", color = "treatment")) +
-          geom_line(show.legend = TRUE) +
-          geom_point(show.legend = FALSE) +
-          labs(title = "Treatment effects", y = "Outcome", x = "Time point",
+     p1 <- ggplot2::ggplot(d, ggplot2::aes_string("time", "y", color = "treatment")) +
+         ggplot2::geom_line(show.legend = TRUE) +
+         ggplot2::geom_point(show.legend = FALSE) +
+         ggplot2::labs(title = "Treatment effects", y = "Outcome", x = "Time point",
                subtitle = paste("Difference at endpoint is equal to Cohen's d =", paras$cohend),
                caption = "N.B Cohen's d is calculated using baseline standard deviations")
 
@@ -333,28 +373,29 @@ plot.plcp <- function(x, n = 1, plot = NULL, ...) {
                                              labels = c("Control", "Treatment"))
 
 
-    p2 <- ggplot(d, aes_string("time", "missing", color = "treatment", group = "treatment")) +
-            geom_point() +
-            geom_line(data = theoretical_missing,
-                      aes_string("time", "missing",
+    p2 <- ggplot2::ggplot(d, ggplot2::aes_string("time", "missing", color = "treatment", group = "treatment")) +
+            ggplot2::geom_point() +
+            ggplot2::geom_line(data = theoretical_missing,
+                        ggplot2::aes_string("time", "missing",
                           color = "treatment", group = "treatment"),
                       linetype = "dashed") +
-            labs(title = "Dropout", y = "Proportion dropout", x = "Time point") +
-            ylim(0,1)
+        ggplot2::labs(title = "Dropout", y = "Proportion dropout", x = "Time point") +
+        ggplot2::ylim(0,1)
 
-     if(is.null(plot)) {
-        return(gridExtra::grid.arrange(p1,p2, ncol=2))
-     } else if(plot == 1) {
+     if(type == "both") {
+         check_installed("gridExtra")
+        return(gridExtra::grid.arrange(p1, p2, ncol=2))
+     } else if(type == "effect") {
          return(p1)
-     } else if(plot == 2) {
+     } else if(type == "dropout") {
          return(p2)
      }
 
 }
 
 #' @export
-plot.plcp_multi <- function(x, n = 1, ...) {
-    plot.plcp(x, n = n)
+plot.plcp_multi <- function(x, n = 1, type = "both", ...) {
+    plot.plcp(x, n = n, type = type)
 }
 
 # power curve
@@ -367,6 +408,13 @@ plot.plcp_multi <- function(x, n = 1, ...) {
 #' @param ... Optional named arguments. Up to two extra arguments can be compared.
 #' When used together with the plot method, the first argument will be grouped by
 #' color and the second by facets.
+#' @param df Either "between" or "satterth" for Satterthwaite's DF approximation.
+#' Also accepts a \code{numeric} value which will be used as DF. See \code{\link{get_power}}
+#' @param alpha The alpha level, defaults to 0.05.
+#' @param R An \code{integer} indicating how many realizations to base power on.
+#' Useful when dropout or cluster sizes are sampled (i.e. are random variables).
+#' @param cores An \code{integer} indicating how many CPU cores to use.
+#'
 #'
 #' @return A \code{data.frame} with class \code{plcp_power_table}.
 #' @export
@@ -395,7 +443,8 @@ plot.plcp_multi <- function(x, n = 1, ...) {
 #'                             n3 = c(3,6,9),
 #'                             icc_slope = c(0, 0.05, 0.1))
 #' plot(x)
-get_power_table <- function(object, n2, ...) {
+get_power_table <- function(object, n2, ..., df = "between", alpha = 0.05, R = 1L, cores = 1L) {
+
     paras <- object
     arg <- list(...)
     updateProgress <- arg$updateProgress
@@ -410,7 +459,7 @@ get_power_table <- function(object, n2, ...) {
 
     paras <- do.call(update.plcp, arg)
 
-    res <- get_power(paras, updateProgress = updateProgress)
+    res <- get_power(paras, updateProgress = updateProgress, df = df, alpha = alpha, R = R, cores = cores)
 
     tmp <- paras
     tmp$icc_slope <- get_ICC_slope(paras)
@@ -426,22 +475,27 @@ get_power_table <- function(object, n2, ...) {
 
     tmp <- tmp[, c("n2", extra_args), drop = FALSE]
 
-
+    tot_n <- lapply(res$tot_n, colMeans)
+    tot_n <- do.call(rbind, tot_n)
+    tot_n <- as.data.frame(tot_n)
     res <- cbind(tmp, power = unlist(res$power),
-                 tot_n = unlist(res$tot_n))
+                 tot_n = tot_n$total)
     res$dropout <- "with missing"
 
     if(is.list(paras$dropout)) {
-        res2 <- get_power(update(paras, dropout = 0))
+        res2 <- get_power(update(paras, dropout = 0), df = df, alpha = alpha, R = R, cores = cores)
+        tot_n <- lapply(res2$tot_n, colMeans)
+        tot_n <- do.call(rbind, tot_n)
+        tot_n <- as.data.frame(tot_n)
         res2 <- cbind(tmp, power = unlist(res2$power),
-                      tot_n = unlist(res2$tot_n))
+                      tot_n = tot_n$total)
         res2$dropout <- "no missing"
 
         res <- rbind(res, res2)
     } else {
         res$dropout <- "no missing"
     }
-    res$tot_n <- paras$n2  * paras$n3
+    #res$tot_n <- paras$n2  * paras$n3
 
     for(i in extra_args) {
         res[, i] <- factor(res[, i])
@@ -459,6 +513,7 @@ get_power_table <- function(object, n2, ...) {
 #' @param ... Optional arguments.
 #' @export
 plot.plcp_power_table <- function(x, ...) {
+    check_installed("ggplot2")
     .d <- x
     x <- .d[, which(!colnames(.d) %in% c("n2","power", "dropout", "tot_n")), drop = FALSE]
      .d$id <- interaction(cbind(x, .d$dropout))
@@ -468,22 +523,23 @@ plot.plcp_power_table <- function(x, ...) {
     color <- colnames(x)[1]
     if(is.na(color)) color <- NULL
     .d$dropout <- factor(.d$dropout)
-    p <- ggplot(.d, aes_string("tot_n", "power", group = "id", color = color, linetype = "dropout")) +
-        geom_line() +
-        geom_point(aes_string(alpha = "dropout")) +
-        theme_minimal() +
-        scale_color_d3() +
-        scale_y_continuous(breaks = scales::pretty_breaks(10)) +
-        scale_x_continuous(breaks = scales::pretty_breaks(10)) +
-        scale_alpha_manual(values = c("with missing" = 0, "no missing" = 1), guide = FALSE) +
-        geom_hline(yintercept = 0.8, linetype = "dotted") +
-        labs(linetype = "missing data",
+    p <- ggplot2::ggplot(.d, ggplot2::aes_string("tot_n", "power", group = "id", color = color, linetype = "dropout")) +
+        ggplot2::geom_line() +
+        ggplot2::geom_point(ggplot2::aes_string(alpha = "dropout")) +
+        ggplot2::theme_minimal() +
+        ggplot2::scale_y_continuous(breaks = scales::pretty_breaks(10)) +
+        ggplot2::scale_x_continuous(breaks = scales::pretty_breaks(10)) +
+        ggplot2::scale_alpha_manual(values = c("with missing" = 0, "no missing" = 1), guide = FALSE) +
+        ggplot2::geom_hline(yintercept = 0.8, linetype = "dotted") +
+        ggplot2::labs(linetype = "missing data",
              color = colnames(.d)[2],
-             x = "subjects per treatment arm",
+             x = "total number of subjects in study",
              y = "Power",
              title = "Power curves")
 
-    if(!is.na(facet)) p <- p + facet_grid(as.formula(paste("~", facet)), labeller = "label_both")
+
+    if(requireNamespace("ggsci", quietly = TRUE)) p <- p + ggsci::scale_color_d3()
+    if(!is.na(facet)) p <- p + ggplot2::facet_grid(as.formula(paste("~", facet)), labeller = "label_both")
 
     p
 }
@@ -509,11 +565,14 @@ make_list_weibull <- function(x) {
 #' Calculate the Monte Carlo standard error of the empirical power estimates
 #'
 #' Returns the expected simulation error for a study design. Indicates how many
-#' simulation that are needed for a desired precisions in the empirical power
+#' simulation that are needed for a desired precision in the empirical power
 #' estimates.
 #'
 #' @param object An object created by \code{\link{get_power}}
 #' @param nsim A \code{numeric} indicating the number of simulations
+#' @param power \emph{Optional}. A \code{numeric} indicating the empirical power.
+#' @param ... Currently not used.
+#' Used when \code{object} is \code{NULL}.
 #'
 #' @return A \code{data.frame} with the estimated power, expected standard error
 #'  of the simulated power estimate, and the 95 \% CI of the estimate.
@@ -533,11 +592,18 @@ make_list_weibull <- function(x) {
 #'
 #' x <- get_power(paras)
 #' get_monte_carlo_se(x, nsim = 1000)
-get_monte_carlo_se <- function(object, nsim) {
+#'
+#' # Without an object
+#' get_monte_carlo_se(power = 0.8, nsim = 1000)
+get_monte_carlo_se <- function(object, nsim, power, ...) {
     UseMethod("get_monte_carlo_se")
 }
-get_monte_carlo_se_ <- function(object, nsim) {
-    p <- object$power
+#' @export
+get_monte_carlo_se.default <- function(object, nsim, power, ...) {
+    get_monte_carlo_se_(p = power, nsim)
+}
+
+get_monte_carlo_se_ <- function(p, nsim) {
     se <- sqrt((p * (1-p)/nsim))
 
     res <- data.frame(power = p,
@@ -550,15 +616,22 @@ get_monte_carlo_se_ <- function(object, nsim) {
     res
 }
 
+# report MCSE based on Gaussian approx
+get_monte_carlo_se_gaussian <- function(x) {
+    sd(x)/sqrt(length(x))
+}
+
 #' @rdname get_monte_carlo_se
 #' @export
-get_monte_carlo_se.plcp_power_3lvl <- function(object, nsim) {
-    get_monte_carlo_se_(object, nsim)
+get_monte_carlo_se.plcp_power_3lvl <- function(object, nsim, ...) {
+    p <- object$power
+    get_monte_carlo_se_(p, nsim)
 }
 #' @rdname get_monte_carlo_se
 #' @export
-get_monte_carlo_se.plcp_power_2lvl <- function(object, nsim) {
-    get_monte_carlo_se_(object, nsim)
+get_monte_carlo_se.plcp_power_2lvl <- function(object, nsim, ...) {
+    p <- object$power
+    get_monte_carlo_se_(p, nsim)
 }
 #' Print method for \code{get_monte_carlo_se}-objects
 #' @param x An object created with \code{\link{get_monte_carlo_se}}.

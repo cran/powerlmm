@@ -17,12 +17,15 @@ paras <- study_parameters(n1 = 3,
 formula <- list("correct" = "y ~ treatment * time + (1 + time | subject) + (0 + time | cluster)",
                 "wrong" = "y ~ treatment * time + (1 + time | subject)")
 
-res <- simulate(paras, nsim = 2, formula = formula, satterthwaite = FALSE, progress = FALSE)
+res <- simulate(paras, nsim = 2, formula = formula, satterthwaite = FALSE, progress = FALSE, batch_progress = FALSE)
 
 
 test_that("multi_sim", {
     tmp <- summary(res)
     expect_identical(nrow(tmp), 2L)
+
+    ## correct class for paras
+    expect_true("plcp_3lvl" %in% class(res[[1]]$paras))
 
     ## Fixed effect
 

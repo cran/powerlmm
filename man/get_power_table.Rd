@@ -4,7 +4,8 @@
 \alias{get_power_table}
 \title{Create a power table for a combination of parameter values}
 \usage{
-get_power_table(object, n2, ...)
+get_power_table(object, n2, ..., df = "between", alpha = 0.05, R = 1L,
+  cores = 1L)
 }
 \arguments{
 \item{object}{An object created by \code{\link{study_parameters}}}
@@ -14,6 +15,16 @@ get_power_table(object, n2, ...)
 \item{...}{Optional named arguments. Up to two extra arguments can be compared.
 When used together with the plot method, the first argument will be grouped by
 color and the second by facets.}
+
+\item{df}{Either "between" or "satterth" for Satterthwaite's DF approximation.
+Also accepts a \code{numeric} value which will be used as DF. See \code{\link{get_power}}}
+
+\item{alpha}{The alpha level, defaults to 0.05.}
+
+\item{R}{An \code{integer} indicating how many realizations to base power on.
+Useful when dropout or cluster sizes are sampled (i.e. are random variables).}
+
+\item{cores}{An \code{integer} indicating how many CPU cores to use.}
 }
 \value{
 A \code{data.frame} with class \code{plcp_power_table}.

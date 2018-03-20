@@ -4,13 +4,13 @@
 \alias{study_parameters}
 \title{Setup study parameters}
 \usage{
-study_parameters(n1, n2, n3 = 1, T_end = NULL, fixed_intercept = 0,
-  fixed_slope = 0, sigma_subject_intercept = NULL,
+study_parameters(n1, n2, n3 = 1, T_end = NULL, fixed_intercept = 0L,
+  fixed_slope = 0L, sigma_subject_intercept = NULL,
   sigma_subject_slope = NULL, sigma_cluster_intercept = NULL,
-  sigma_cluster_slope = NULL, sigma_error = NULL, cor_subject = 0,
-  cor_cluster = 0, cor_within = 0, var_ratio = NULL, icc_slope = NULL,
-  icc_pre_subject = NULL, icc_pre_cluster = NULL, cohend = 0,
-  partially_nested = FALSE, dropout = 0, deterministic_dropout = TRUE)
+  sigma_cluster_slope = NULL, sigma_error = 10, cor_subject = 0L,
+  cor_cluster = 0L, cor_within = 0L, var_ratio = NULL, icc_slope = NULL,
+  icc_pre_subject = NULL, icc_pre_cluster = NULL, cohend = 0L,
+  partially_nested = FALSE, dropout = 0L, deterministic_dropout = TRUE)
 }
 \arguments{
 \item{n1}{Number of level 1 units, e.g. measurements per subject.}
@@ -54,12 +54,14 @@ slope variance to the within-subject variance.}
 at the cluster level.}
 
 \item{icc_pre_subject}{Amount of baseline
-variance at the subject level. N.B. this is not really an ICC.}
+variance at the subject level. N.B. the variance at the subject-level also
+included the cluster-level variance. If there's no random slopes, this would
+be the subject-level ICC, i.e. correlation between time points.}
 
 \item{icc_pre_cluster}{Amount of baseline
 variance at the cluster level.}
 
-\item{cohend}{Standardized between-groups treatment effect at the last time point,
+\item{cohend}{Standardized between-group treatment effect at the last time point,
 see \emph{Details}.}
 
 \item{partially_nested}{\code{logical}; indicates if there's clustering in both
@@ -69,12 +71,13 @@ arms or only in the treatment arm.}
 \code{\link{dropout_manual}}. Assumed to be 0 if \code{NULL}.}
 
 \item{deterministic_dropout}{\code{logical}; if \code{FALSE} the input to
-\code{dropout} will be treated as stochastic and dropout will sampled
-from a multinomial distribution.}
+\code{dropout} will be treated as random and dropout will be sampled
+from a multinomial distribution. N.B.: the random dropout will be
+sampled independently in both treatment arms.}
 }
 \value{
 A \code{list} or \code{data.frame} of parameters values, either of
-class \code{plcp} or \code{plcp_muli} if multiple parameters are compared.
+class \code{plcp} or \code{plcp_multi} if multiple parameters are compared.
 }
 \description{
 Setup the parameters for calculating power for longitudinal multilevel studies
@@ -82,7 +85,7 @@ comparing two groups. Ordinary two-level models (subjects with repeated measures
 and longitudinal three-level models with clustering due to therapists, schools, provider etc,
 are supported. Random slopes at the subject level and cluster level are
 possible. Cluster sizes can be unbalanced, and vary by treatment.
-Partially-nested designs are supported. Missing data can also be accounted
+Partially nested designs are supported. Missing data can also be accounted
 for.
 }
 \details{
@@ -102,17 +105,34 @@ size of the parameters, therefore, it is possible to setup your calculations
 using only standardized inputs, or by a combination of raw inputs and
 standardized inputs. For instance, if \code{sigma_subject_slope} and
 \code{icc_slope} is specified, the \code{sigma_cluster_slope} will be
-solved for. More information regarding the standardized inputs are available in
-the two-level and three-level vignettes.
+solved for. Only the cluster-level parameters can be solved when standardized and
+raw values are mixed. \code{sigma_error} is 10 by default. More information regarding
+the standardized inputs are available in the two-level and three-level vignettes.
+
+\bold{Difference between 0 and NA}
+
+For the variance components \code{0} and \code{NA/NULL} have different meanings.
+A parameter that is 0 is still kept in the model, e.g. if \code{icc_pre_cluster = 0}
+a random intercept is estimated at the cluster level, but the true value is 0.
+If the argument is either \code{NULL} or \code{NA} it is excluded from the model.
+This choice will matter when running simulations, or if Satterthwaite \emph{dfs} are used.
+
+The default behavior if a parameters is not specified is that \code{cor_subject} and
+\code{cor_cluster} is 0, and the other variance components are \code{NULL}.
 
 \bold{Cohen's d calculation}
 
-Cohen's \emph{d} is calculated by using the baseline standard deviation as the standardizer.
+Cohen's \emph{d} is calculated by using the baseline standard deviation as the denominator.
+For \bold{partially nested} designs the control groups baseline SD is used.
+
+The choice of denominator differs between fields, and adding a more flexible solution
+is high-priority. In the meanwhile you'll have to manually convert between the different
+standardizations.
 
 \bold{Two- or three-level models}
 
 If either \code{sigma_cluster_slope} or \code{icc_slope} and
- \code{sigma_cluster_intercept} or \code{icc_pre_cluster} is zero or
+ \code{sigma_cluster_intercept} or \code{icc_pre_cluster} is
 \code{NULL} it will be assumed a two-level design is wanted.
 
 \bold{Unequal cluster sizes and unbalanced allocation}
@@ -120,16 +140,30 @@ If either \code{sigma_cluster_slope} or \code{icc_slope} and
 It is possible to specify different cluster sizes using
 \code{\link{unequal_clusters}}. Cluster sizes can vary between treatment arms
 by also using \code{\link{per_treatment}}. The number of clusters per treatment can
-also be set by using \code{\link{per_treatment}}. See \code{\link{per_treatment}}
-and \code{\link{unequal_clusters}} examples of their use.
+also be set by using \code{\link{per_treatment}}. Moreover, cluster
+sizes can be sampled from a distribution, and treated as a random variable.
+See \code{\link{per_treatment}} and \code{\link{unequal_clusters}} for examples of their use.
 
 \bold{Missing data and dropout}
 
 Accounting for missing data in the power calculations is possible. Currently,
 \code{dropout} can be specified using either \code{\link{dropout_weibull}} or
- \code{\link{dropout_manual}}. It is possible to have different dropout
- patterns per treatment group using \code{\link{per_treatment}}. See their
- respective help pages for examples of their use.
+\code{\link{dropout_manual}}. It is possible to have different dropout
+patterns per treatment group using \code{\link{per_treatment}}. See their
+respective help pages for examples of their use.
+
+If \code{deterministic_dropout = TRUE} then the proportion of dropout is treated is fixed.
+However, excactly which subjects dropout is randomy sampled within treatments. Thus,
+clusters can become slightly unbalanced, but generally power varies little over realizations.
+
+For \emph{random dropout}, \code{deterministic_dropout = FALSE}, the proportion
+of dropout is converted to the probability of having excactly \emph{i} measurements,
+and the actual dropout is sampled from a multinomial distribution. In this case, the proportion of
+dropout varies over the realizations from the multinomial distribution, but will
+match the dropout proportions in expectation. The random dropout in
+each treatment group is sampled from independent multinomial distributions.
+
+Generally, power based on fixed dropout is a good approximation of random dropout.
 }
 \examples{
 # Three level model with both subject- and cluster-level random slope

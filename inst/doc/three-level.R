@@ -79,6 +79,26 @@ p <- study_parameters(n1 = 11,
 p
 
 ## ------------------------------------------------------------------------
+n2 <- unequal_clusters(func = rpois(n = 5, lambda = 5))
+
+p <- study_parameters(n1 = 3,
+                      n2 = n2,
+                      icc_pre_subject = 0.5,
+                      icc_pre_cluster = 0,
+                      icc_slope = 0.05,
+                      var_ratio = 0.02,
+                      cohend = -0.8)
+get_power(p, R = 10, progress = FALSE)
+
+## ------------------------------------------------------------------------
+# sample cluster sizes in each treatment group independently
+# but from the same distribution
+func <- unequal_clusters(func = rpois(n = 5, lambda = 5))
+n2 <- per_treatment(control = func, 
+                    treatment = func)
+
+
+## ------------------------------------------------------------------------
 p <- study_parameters(n1 = 11,
                       n2 = unequal_clusters(2, 5, 10, 30),
                       icc_pre_subject = 0.5,
@@ -154,7 +174,7 @@ p2 <- study_parameters(n1 = 11,
                       fixed_slope = -0.5/10,
                       cohend = -0.5)
 
-plot(p2, plot = 2)
+plot(p2, type = "dropout")
 
 ## ---- message = FALSE----------------------------------------------------
 p2 <- study_parameters(n1 = 11,

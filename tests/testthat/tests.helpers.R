@@ -14,6 +14,27 @@ test_that("icc_slope", {
     x <- get_ICC_slope(p)
     expect_equal(x, 0.5)
 
+    # NA
+    p <- study_parameters(n1 = 5,
+                          n2 = 5,
+                          n3 = 5,
+                          sigma_subject_intercept = 1.55,
+                          sigma_subject_slope = NA,
+                          sigma_cluster_intercept = 1.55,
+                          sigma_cluster_slope = 1)
+    x <- get_ICC_slope(p)
+    expect_equal(x, 1)
+
+    p <- study_parameters(n1 = 5,
+                          n2 = 5,
+                          n3 = 5,
+                          sigma_subject_intercept = 1.55,
+                          sigma_subject_slope = 1,
+                          sigma_cluster_intercept = 1.55,
+                          sigma_cluster_slope = NA)
+    x <- get_ICC_slope(p)
+    expect_equal(x, as.numeric(NA))
+
     # Multi
     p <- study_parameters(n1 = 5,
                           n2 = 5,
@@ -25,6 +46,8 @@ test_that("icc_slope", {
 
     x <- get_ICC_slope(p)
     expect_equal(x, c(0.5, 1/3, 2/3, 0.5))
+
+
     })
 
 # get_var_ratio
@@ -78,10 +101,10 @@ test_that("ICC_pre_subjects", {
                               cohend = -0.8)
 
     x <- get_ICC_pre_subjects(paras)
-    expect_equal(x, 1.2^2/(1.2^2 + 0.5^2 + 1.25^2))
+    expect_equal(x, (1.2^2 + 0.5^2)/(1.2^2 + 0.5^2 + 1.25^2))
 
     x <- get_ICC_pre_subjects(u0 = 1.33, v0 = 0.5, error = 1.55)
-    expect_equal(x, 1.33^2/(1.33^2 + 0.5^2 + 1.55^2))
+    expect_equal(x, (1.33^2+ 0.5^2)/(1.33^2 + 0.5^2 + 1.55^2))
 
 
     # Multi
@@ -98,7 +121,7 @@ test_that("ICC_pre_subjects", {
 
     expect_equal(nrow(paras), 3*2*2)
     x1 <- get_ICC_pre_subjects(paras)
-    x2 <- with(paras, sigma_subject_intercept^2/(sigma_subject_intercept^2 +
+    x2 <- with(paras, (sigma_subject_intercept^2 + sigma_cluster_intercept^2)/(sigma_subject_intercept^2 +
                                                      sigma_cluster_intercept^2 +
                                                      sigma_error^2))
     expect_equal(x1, x2)
@@ -234,6 +257,141 @@ test_that("is.unequal_clusters per_treatment", {
 
 
 # SDS ---------------------------------------------------------------------
+test_that("get_SDS", {
+    p <- study_parameters(n1 = 11,
+                          n2 = 10,
+                          n3 = 3,
+                          T_end = 10,
+                          sigma_subject_intercept = 1L,
+                          icc_slope = 0,
+                          sigma_error = 1L,
+                          icc_pre_cluster = 0L,
+                          var_ratio = 0L)
+
+    x <- get_sds(p)
+    expect_identical(nrow(x), 11L)
+    expect_equal(x$SD_with_random_slopes, rep(sqrt(1^2 + 1^2), 11))
+    expect_error(x, NA)
+
+    # varying slope
+    p <- update(p, var_ratio = 0.05, icc_slope = 0.1)
+    x <- get_sds(p)
+    expect_identical(nrow(x), 11L)
+    expect_equal(x$SD_no_random_slopes, rep(sqrt(1^2 + 1^2), 11))
+
+    expect_length(unique(x$SD_with_random_slopes), 11)
+
+    expect_error(plot(x), NA)
+
+    # NA
+    p <- study_parameters(n1 = 11,
+                          n2 = 10,
+                          n3 = 3,
+                          T_end = 10,
+                          sigma_subject_intercept = 1L,
+                          icc_slope = 0,
+                          sigma_error = 1L,
+                          icc_pre_cluster = NA,
+                          var_ratio = 0L)
+
+    x <- get_sds(p)
+    expect_identical(nrow(x), 11L)
+    expect_equal(x$SD_with_random_slopes, rep(sqrt(1^2 + 1^2), 11))
+    expect_error(x, NA)
 
 
 
+})
+
+# get_correlation_matrix --------------------------------------------------
+test_that("get_correlation_matrix", {
+    p1 <- study_parameters(n1 = 11,
+                          n2 = 10,
+                          n3 = 3,
+                          T_end = 10,
+                          sigma_subject_intercept = 1L,
+                          icc_slope = 0,
+                          sigma_error = 1L,
+                          icc_pre_cluster = 0L,
+                          var_ratio = 0L)
+
+    x <- get_correlation_matrix(p1)
+    tmp <- dplyr::near(x[lower.tri(x)], 0.5)
+
+    expect_true(all(tmp))
+    expect_true(all(diag(x) == 1))
+    expect_error(plot(x), NA)
+
+    # NA
+    p1 <- study_parameters(n1 = 11,
+                           n2 = 10,
+                           n3 = 3,
+                           T_end = 10,
+                           sigma_subject_intercept = 1L,
+                           icc_slope = 0,
+                           sigma_error = 1L,
+                           icc_pre_cluster = NA,
+                           var_ratio = 0L)
+
+    x <- get_correlation_matrix(p1)
+    tmp <- dplyr::near(x[lower.tri(x)], 0.5)
+
+    expect_true(all(tmp))
+    expect_true(all(diag(x) == 1))
+    expect_error(plot(x), NA)
+
+    # varying slope
+    p1 <- update(p1, var_ratio = 0.05, icc_slope = 0.1)
+    x <- get_correlation_matrix(p1)
+    expect_true(all(diag(x) == 1))
+    expect_equal(dim(x), c(11,11))
+    expect_true(all(!is.na(x[lower.tri(x)])))
+
+})
+# get_VPC --------------------------------------------------
+test_that("get_VPC", {
+    p <- study_parameters(n1 = 11,
+                          n2 = 10,
+                          n3 = 3,
+                          T_end = 10,
+                          sigma_subject_intercept = 1L,
+                          icc_slope = 0,
+                          sigma_error = 1L,
+                          icc_pre_cluster = 0L,
+                          var_ratio = 0L)
+
+    x <- get_VPC(p)
+    expect_identical(nrow(x), 11L)
+    expect_equal(x$between_clusters, rep(0, 11))
+    expect_equal(x$between_subjects, rep(50, 11))
+    expect_equal(x$within_subjects, rep(50, 11))
+    expect_equal(x$tot_var, rep(0, 11))
+    expect_error(x, NA)
+
+    # NA
+    p <- study_parameters(n1 = 11,
+                          n2 = 10,
+                          n3 = 3,
+                          T_end = 10,
+                          sigma_subject_intercept = 1L,
+                          icc_slope = 0,
+                          sigma_error = 1L,
+                          icc_pre_cluster = NA,
+                          var_ratio = 0L)
+
+    x <- get_VPC(p)
+    expect_identical(nrow(x), 11L)
+    expect_equal(x$between_clusters, rep(0, 11))
+    expect_equal(x$between_subjects, rep(50, 11))
+    expect_equal(x$within_subjects, rep(50, 11))
+    expect_equal(x$tot_var, rep(0, 11))
+    expect_error(x, NA)
+
+    # varying slope
+    p <- update(p, var_ratio = 0.05, icc_slope = 0.1)
+    x <- get_VPC(p)
+    expect_identical(nrow(x), 11L)
+    expect_length(unique(x$between_clusters), 11)
+    expect_error(plot(x), NA)
+
+})

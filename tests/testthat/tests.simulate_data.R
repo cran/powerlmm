@@ -241,7 +241,120 @@ test_that("proportion of dropout, per_treatment", {
     expect_equal(cc$miss[10], 0.2, tolerance = 0.01)
     expect_equal(tx$miss[10], 0.3, tolerance = 0.01)
 })
+test_that("proportion of dropout, only in control", {
 
+    dropout <- per_treatment(dropout_weibull(0.2, 1),
+                             0)
+
+    p <- study_parameters(n1 = 10,
+                          n2 = 25,
+                          n3 = 25,
+                          sigma_subject_intercept = 1.44,
+                          icc_pre_cluster = 0,
+                          sigma_subject_slope = 0.2,
+                          icc_slope = 0.05,
+                          sigma_error = 1.44,
+                          dropout = dropout,
+                          cohend = 0.5)
+
+
+    d <- simulate_data(p)
+    n <- d %>% group_by(treatment, time) %>%
+        summarise(miss = mean(is.na(y)))
+
+    tx <- n %>% filter(treatment == 1)
+    cc <- n %>% filter(treatment == 0)
+
+    dp <- get_dropout(p)
+
+    expect_equal(tx$miss, dp$treatment, tolerance = 0.01)
+    expect_equal(cc$miss, dp$control, tolerance = 0.01)
+    expect_equal(cc$miss[10], 0.2, tolerance = 0.01)
+    expect_equal(tx$miss[10], 0, tolerance = 0.01)
+})
+test_that("proportion of dropout, only in control", {
+
+    dropout <- per_treatment(dropout_weibull(0.2, 1),
+                             0)
+
+    p <- study_parameters(n1 = 10,
+                          n2 = 25,
+                          n3 = 25,
+                          sigma_subject_intercept = 1.44,
+                          icc_pre_cluster = 0,
+                          sigma_subject_slope = 0.2,
+                          icc_slope = 0.05,
+                          sigma_error = 1.44,
+                          dropout = dropout,
+                          deterministic_dropout = FALSE,
+                          cohend = 0.5)
+
+
+    d <- simulate_data(p)
+    n <- d %>% group_by(treatment, time) %>%
+        summarise(miss = mean(is.na(y)))
+
+    tx <- n %>% filter(treatment == 1)
+
+    expect_equal(tx$miss[10], 0, tolerance = 0.01)
+})
+test_that("proportion of dropout, only in tx", {
+
+    dropout <- per_treatment(0,
+                             dropout_weibull(0.2, 1))
+
+    p <- study_parameters(n1 = 10,
+                          n2 = 25,
+                          n3 = 25,
+                          sigma_subject_intercept = 1.44,
+                          icc_pre_cluster = 0,
+                          sigma_subject_slope = 0.2,
+                          icc_slope = 0.05,
+                          sigma_error = 1.44,
+                          dropout = dropout,
+                          cohend = 0.5)
+
+
+    d <- simulate_data(p)
+    n <- d %>% group_by(treatment, time) %>%
+        summarise(miss = mean(is.na(y)))
+
+    tx <- n %>% filter(treatment == 1)
+    cc <- n %>% filter(treatment == 0)
+
+    dp <- get_dropout(p)
+
+    expect_equal(tx$miss, dp$treatment, tolerance = 0.01)
+    expect_equal(cc$miss, dp$control, tolerance = 0.01)
+    expect_equal(cc$miss[10], 0, tolerance = 0.01)
+    expect_equal(tx$miss[10], 0.2, tolerance = 0.01)
+})
+test_that("proportion of dropout, only in tx", {
+
+    dropout <- per_treatment(0,
+                             dropout_weibull(0.2, 1))
+
+    p <- study_parameters(n1 = 10,
+                          n2 = 25,
+                          n3 = 25,
+                          sigma_subject_intercept = 1.44,
+                          icc_pre_cluster = 0,
+                          sigma_subject_slope = 0.2,
+                          icc_slope = 0.05,
+                          sigma_error = 1.44,
+                          dropout = dropout,
+                          deterministic_dropout = FALSE,
+                          cohend = 0.5)
+
+
+    d <- simulate_data(p)
+    n <- d %>% group_by(treatment, time) %>%
+        summarise(miss = mean(is.na(y)))
+
+    cc <- n %>% filter(treatment == 0)
+
+    expect_equal(cc$miss[10], 0, tolerance = 0.001)
+})
 
 ## Manual dropout
 test_that("proportion of dropout", {
@@ -313,7 +426,6 @@ test_that("proportion of dropout, per_treatment", {
 })
 
 
-# partially nested
 test_that("proportion of dropout, per_treatment", {
 
     p <- study_parameters(n1 = 10,
@@ -450,3 +562,75 @@ test_that("multi_para #1", {
 
 
 })
+
+test_that("proportion of dropout, per_treatment", {
+
+    p <- study_parameters(n1 = 10,
+                          n2 = unequal_clusters(func = rpois(5, lambda = 5)),
+                          sigma_subject_intercept = 1.44,
+                          icc_pre_cluster = 0,
+                          sigma_subject_slope = 0.2,
+                          icc_slope = 0.05,
+                          sigma_error = 1.44,
+                          partially_nested = TRUE,
+                          cohend = 0.5)
+
+    # partially nested
+    set.seed(3)
+    d <- simulate_data(p)
+    n <- d %>%
+        group_by(treatment) %>%
+        summarise(n = length(unique(slope_cluster))) %>%
+        .$n
+
+    expect_equal(n, c(1,5))
+
+    n2 <- d %>%
+        group_by(treatment, cluster) %>%
+        filter(time == 0) %>%
+        summarise(n = length(cluster)) %>%
+        .$n
+
+    expect_true(length(unique(n2)) > 1)
+
+    # not partially_nested
+    p <- update(p, partially_nested = FALSE)
+
+    d <- simulate_data(p)
+    n <- d %>%
+        group_by(treatment) %>%
+        summarise(n = length(unique(slope_cluster))) %>%
+        .$n
+    expect_equal(n, c(5,5))
+
+    n2 <- d %>%
+        group_by(treatment, cluster) %>%
+        filter(time == 0) %>%
+        summarise(n = length(cluster)) %>%
+        .$n
+
+    expect_true(length(unique(n2)) > 1)
+
+
+    # test prepped
+    prepped <- prepare_paras(p)
+
+    d <- simulate_data(prepped)
+    n <- d %>%
+        group_by(treatment) %>%
+        summarise(n = length(unique(slope_cluster))) %>%
+        .$n
+    expect_equal(n, c(5,5))
+
+    n2 <- d %>%
+        group_by(treatment, cluster) %>%
+        filter(time == 0) %>%
+        summarise(n = length(cluster)) %>%
+        .$n
+    expect_true(length(unique(n2)) > 1)
+    n2_2 <- as.integer(get_n2(prepped$control)$treatment)
+    expect_identical(rep(n2_2, 2), n2)
+
+
+})
+

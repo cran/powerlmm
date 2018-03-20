@@ -4,12 +4,13 @@
 \name{powerlmm}
 \alias{powerlmm}
 \alias{powerlmm-package}
-\title{Power Calculations for Longitudinal Multilevel Models}
+\title{Power Analysis for Longitudinal Multilevel Models}
 \description{
 The \pkg{powerlmm} package provides a fast and flexible way to calculate power for
-two- and three-level multilevel models with missing data. The focus is on
-longitudinal designs, i.e. where the first level is measurements, and the second
-level is subjects nested within a (optional) higher level-three unit, e.g. therapists.
+two- and three-level multilevel models with missing data. The focus is on power analysis
+for the test of the treatment effect in longitudinally clustered designs,
+i.e. where the first level is measurements, and the second level is subjects nested
+within a (optional) higher level-three unit, e.g. therapists.
 }
 \details{
 All study designs are specified using the function \code{\link{study_parameters}},
@@ -17,7 +18,7 @@ which lets you define your model using familiar notation, either by specifying
 the model parameters directly, or by using relative standardized inputs (e.g. \% variance at
 each level). Several functions are provided to help you visualize and understand
 the implied model, type \code{methods(class="plcp")} to see available methods.
-The basic features of the package are also available via a interactive (\pkg{Shiny})
+The basic features of the package are also available via an interactive (\pkg{Shiny})
 web application, which you can launch by typing \code{shiny_powerlmm()}.
 }
 \section{Supported models}{
@@ -28,14 +29,18 @@ and missing data. The main features of the package are:
 \itemize{
 \item (Longitudinal) Two- and three-level (nested) linear mixed models,
 and partially nested designs
-\item Random slopes at the subject- and cluster-level
-\item Account for missing data/dropout
-\item Unbalanced designs (both unequal cluster sizes, and treatment groups)
+\item Random slopes at the subject- and cluster-level.
+\item Account for missing data/dropout.
+\item Unbalanced designs (both unequal cluster sizes, and treatment groups).
 \item Calculate the design effect, and estimated type I error when the
-third-level is ignored
-\item Fast analytical power calculations for all supported designs
-\item Explore bias, type 1 error and model misspecification using
+third-level is ignored.
+\item Fast analytical power calculations for all supported designs.
+\item Explore bias, Type I error and model misspecification using.
 convenient simulation methods
+\item Few clusters; accurate power analysis even with very few clusters,
+by using Satterthwaite's degrees of freedom approximation.
+\item Create power curves to guide power analysis and help with
+optimal design of sample sizes at each level.
 }
 }
 

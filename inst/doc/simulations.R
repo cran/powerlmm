@@ -28,12 +28,13 @@ knitr::opts_chunk$set(eval = FALSE)
 ## ------------------------------------------------------------------------
 #  f <- "y ~ treatment * time + (1 + time | subject) + (0 + treatment:time | cluster)"
 #  
+#  cores <- parallel::detectCores() # use all cores
+#  
 #  res <- simulate(object = p,
 #                  nsim = 5000,
 #                  formula = f,
 #                  satterthwaite = TRUE,
-#                  progress = TRUE,
-#                  cores = 1,
+#                  cores = cores,
 #                  save = FALSE)
 #  
 #  summary(res)
@@ -48,8 +49,7 @@ knitr::opts_chunk$set(eval = FALSE)
 #                  nsim = 5000,
 #                  formula = f,
 #                  satterthwaite = TRUE,
-#                  progress = TRUE,
-#                  cores = 1,
+#                  cores = cores,
 #                  save = FALSE)
 #  
 #  summary(res)
@@ -78,15 +78,14 @@ knitr::opts_chunk$set(eval = FALSE)
 #                  nsim = 5000,
 #                  formula = f,
 #                  satterthwaite = TRUE,
-#                  progress = TRUE,
-#                  cores = 1,
+#                  cores = cores,
 #                  save = FALSE)
 
 ## ------------------------------------------------------------------------
-#  # Summarize 'time:treatment' results
+#  # Summarize the 'time:treatment' results
 #  summary(res, para = "time:treatment", type = "fixed", model = "correct")
 #  
-#  # Summarize cluster-level random slope
+#  # Summarize the cluster-level random slope
 #  summary(res, para = "cluster_slope", type = "random", model = "correct")
 #  
 

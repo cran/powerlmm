@@ -6,16 +6,21 @@
 \alias{get_monte_carlo_se.plcp_power_2lvl}
 \title{Calculate the Monte Carlo standard error of the empirical power estimates}
 \usage{
-get_monte_carlo_se(object, nsim)
+get_monte_carlo_se(object, nsim, power, ...)
 
-\method{get_monte_carlo_se}{plcp_power_3lvl}(object, nsim)
+\method{get_monte_carlo_se}{plcp_power_3lvl}(object, nsim, ...)
 
-\method{get_monte_carlo_se}{plcp_power_2lvl}(object, nsim)
+\method{get_monte_carlo_se}{plcp_power_2lvl}(object, nsim, ...)
 }
 \arguments{
 \item{object}{An object created by \code{\link{get_power}}}
 
 \item{nsim}{A \code{numeric} indicating the number of simulations}
+
+\item{power}{\emph{Optional}. A \code{numeric} indicating the empirical power.}
+
+\item{...}{Currently not used.
+Used when \code{object} is \code{NULL}.}
 }
 \value{
 A \code{data.frame} with the estimated power, expected standard error
@@ -23,7 +28,7 @@ A \code{data.frame} with the estimated power, expected standard error
 }
 \description{
 Returns the expected simulation error for a study design. Indicates how many
-simulation that are needed for a desired precisions in the empirical power
+simulation that are needed for a desired precision in the empirical power
 estimates.
 }
 \examples{
@@ -39,4 +44,7 @@ paras <- study_parameters(n1 = 11,
 
 x <- get_power(paras)
 get_monte_carlo_se(x, nsim = 1000)
+
+# Without an object
+get_monte_carlo_se(power = 0.8, nsim = 1000)
 }

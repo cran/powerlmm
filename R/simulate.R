@@ -4,10 +4,16 @@
 #' @param n Optional; specifies which row \code{n} should be used if \code{object}
 #'  is a \code{data.frame} containing multiple setups.
 #'
-#' @return A \code{data.frame} with the simulated data in long form. Column
-#' \code{y} is the outcome, \code{time} the time variable, \code{subject} is
-#' the subject-level id variable, from 1, ..., the total number of subjects. \code{cluster} is
-#' the cluster-level id variable, from 1, ..., to the total number of clusters.
+#' @return A \code{data.frame} with the simulated data in long form. With the following columns:
+#' \itemize{
+#'  \item \code{y} the outcome vector, with missing values as NA
+#'  \item \code{y_c} the outcome vector, without missing values removed.
+#'  \item \code{time} the time vector
+#'  \item \code{treatment} treatment indicator (0 = "control", 1 = "treatment")
+#'  \item \code{subject} subject-level id variable, from 1 to total number of subjects.
+#'  \item \code{cluster} for three-level models; the cluster-level id variable,
+#'  from 1 to the total number of clusters.
+#' }
 #' @export
 #'
 #' @examples
@@ -31,16 +37,34 @@ simulate_data <- function(paras, n = 1) {
     UseMethod("simulate_data")
 }
 
+create_dropout_indicator <- function(paras) {
+    ind <- dropout_process(unlist(paras$dropout), paras)
+    ind <- ind$missing
+
+    ind
+}
+add_NA_values_from_indicator <- function(d, missing) {
+    d$miss <- missing
+    d$y <- ifelse(d$miss == 1, NA, d$y)
+    d <- d[, c("y",
+               "y_c",
+                grep("^y$|^y_c$", colnames(d), value = TRUE, invert = TRUE))]
+    d
+}
 #' @rdname simulate_data
 #' @export
 simulate_data.plcp <- function(paras, n = NULL) {
     if (is.data.frame(paras))
         paras <- as.list(paras)
-    slope_diff <- get_slope_diff(paras) / paras$T_end
-    paras$cohend <- NULL
-    tmp <- prepare_paras(paras)
+    if(is.null(paras$prepared)) {
+        tmp <- prepare_paras(paras)
+    } else tmp <- paras
     paras <- tmp$control
     paras_tx <- tmp$treatment
+
+    slope_diff <- get_slope_diff(paras) / paras$T_end
+    paras$cohend <- NULL
+    paras_tx$cohend <- NULL
 
     paras_tx$fixed_slope <- paras_tx$fixed_slope + slope_diff
 
@@ -49,27 +73,27 @@ simulate_data.plcp <- function(paras, n = NULL) {
     paras$allocation_ratio <- NULL
     paras_tx$allocation_ratio <- NULL
 
+    # replace NA
+    paras[is.na(paras)] <- 0
+    paras_tx[is.na(paras_tx)] <- 0
 
     d_tx <- simulate_3lvl_data(paras_tx)
     d_c <- simulate_3lvl_data(paras)
 
     # drop outs
     if (is.list(paras$dropout) |
-        is.function(paras$dropout) | length(paras$dropout) > 1) {
-        miss_tx <- dropout_process(unlist(paras_tx$dropout), paras_tx)
-        miss_tx <- miss_tx$missing
+        is.function(paras$dropout) |
+        length(paras$dropout) > 1) {
 
-        miss_c <- dropout_process(unlist(paras$dropout), paras)
-        miss_c <- miss_c$missing
-
-        d_tx$miss <- miss_tx
-        d_tx$y <- ifelse(d_tx$miss == 1, NA, d_tx$y)
-
-        d_c$miss <- miss_c
-        d_c$y <- ifelse(d_c$miss == 1, NA, d_c$y)
+        miss_c <- create_dropout_indicator(paras)
+        d_c <- add_NA_values_from_indicator(d_c, miss_c)
     }
-
-
+    if (is.list(paras_tx$dropout) |
+        is.function(paras_tx$dropout) |
+        length(paras_tx$dropout) > 1) {
+        miss_tx <- create_dropout_indicator(paras_tx)
+        d_tx <- add_NA_values_from_indicator(d_tx, miss_tx)
+    }
 
     # combine
     d_tx$treatment <- 1
@@ -90,26 +114,29 @@ simulate_data.plcp_multi <- function(paras, n = 1) {
 #' @param nsim The number of simulations to run.
 #' @param seed Currently ignored.
 #' @param formula \code{lme4::lmer} formula(s) used to analyze the data, see \emph{Details}.
-#' Should either be a character vector if one model is simulated.
+#' Should either be a character vector or named list if one model is simulated.
 #' It also possible to compare two models, e.g. a correct and a misspecified model,
 #' by passing the two formulas as a named list, with the names "wrong" and "correct".
-#' See \emph{Examples}.
+#' See \emph{Examples}. If \code{NULL} the formula is made automatically,
+#' using \code{\link{create_lmer_formula}}, which does not support objects with multiple
+#' simulation setups.
 #' @param satterthwaite Logical; if \code{TRUE} Satterthwaite's degrees of freedom
 #' approximation will be used when computing \emph{p}-values. This is implemented using
 #' the \code{lmerTest}-package. See \emph{Details}.
 #' @param CI Logical; if \code{TRUE} coverage rates for confidence intervals
 #' will be calculated. See \emph{Details}.
-#' @param cores Number of CPU cores to use. Parallelization is done using
-#' parallel::mclapply() which does not support \strong{Windows}. Use \code{cores = 1}
-#' if you're on Windows.
-#' @param progress Logical; will display progress if \code{TRUE}. Currently
-#' ignored on \emph{Windows}. Package \code{pbmclapply} is used to display progress.
-#' \strong{N.B} using a progress bar will noticeably increase the simulation time.
-#' @param save Logical; if \code{TRUE} results will be saved to your working directory
-#' under the folder "save".
-#' @param ... Optional arguments.
+#' @param cores Number of CPU cores to use. If called from a GUI environment (e.g. RStudio) or
+#' a computer running Microsoft Windows, PSOCK clusters will be used. If called from a
+#' non-interactive Unix environment forking is utilized.
+#' @param progress \code{logical}; will display progress if \code{TRUE}. Currently
+#' ignored on \emph{Windows}. Package \code{pbmclapply} is used to display progress,
+#' which relies on forking. \strong{N.B} using a progress bar will noticeably
+#' increase the simulation time, due to the added overhead.
+#' @param batch_progress \code{logical}; if \code{TRUE} progress will be shown for
+#' simulations with multiple setups.
+#' @param ... Optional arguments, see \emph{Saving} in \emph{Details} section.
 #'
-#' @importFrom stats simulate as.formula confint pnorm pt qnorm qt rmultinom sd time vcov
+#' @importFrom stats simulate as.formula confint pnorm pt qnorm qt rmultinom sd time vcov reshape
 #'
 #' @details
 #'
@@ -125,15 +152,32 @@ simulate_data.plcp_multi <- function(paras, n = 1) {
 #'  from 1 to the total number of clusters.
 #' }
 #'
-#' See \emph{Examples} and the simulation-vignette for formula examples.
+#' See \emph{Examples} and the simulation-vignette for formula examples. For
+#' \code{object}s that contain a single study setup, then the lmer formula
+#' can be created automatically using \code{\link{create_lmer_formula}}.
 #'
 #' \strong{Satterthwaite's approximation, and CI coverage}
 #'
-#' To decrease the simulation time Satterthwaite's dfs and the CIs' coverage rates
+#' To decrease the simulation time Satterthwaite's \emph{dfs} and the CIs' coverage rates
 #' will only be calculated for the test of 'time:treatment'-interaction.
 #'
 #' Confidence intervals are both calculated using profile likelihood and by
 #' the Wald approximation.
+#'
+#' \strong{Saving intermediate results for multi-sims}
+#'
+#' Objects with multi-sims can be save after each batch is finished. This is highly
+#' recommended when many designs are simulated. The following additional arguments
+#' control saving behavior:
+#'
+#' \itemize{
+#'  \item \code{'save'}, \code{logical}, if \code{TRUE} each batch is saved as a
+#'  \code{RDS}-file. Results are saved in your working directory, in the directory
+#'  specified by \code{save_folder}.
+#'  \item \code{'save_folder'} a \code{character} indicating the folder name. Default is \code{'save'}.
+#'  \item \code{'save_folder_create'},  \code{logical}, if \code{TRUE} then \code{save_folder}
+#'  will be created if it does not exist in your working directory.
+#' }
 #'
 #' @seealso \code{\link{summary.plcp_sim}}, \code{\link{simulate_data}}
 #'
@@ -244,14 +288,17 @@ simulate_data.plcp_multi <- function(paras, n = 1) {
 simulate.plcp <- function(object,
                           nsim,
                           seed = NULL,
-                          formula,
+                          formula = NULL,
                           satterthwaite = FALSE,
                           CI = FALSE,
                           cores = 1,
                           progress = FALSE,
-                          save = FALSE,
+                          batch_progress = TRUE,
                           ...) {
+
+    if(is.null(formula)) formula <- create_lmer_formula(object)
     formula <- check_formula(formula)
+    if(satterthwaite) check_installed("lmerTest")
 
     if (is.null(nrow(object))) {
         simulate.plcp_list(
@@ -262,7 +309,6 @@ simulate.plcp <- function(object,
             CI = CI,
             cores = cores,
             progress = progress,
-            save = save,
             ...
         )
     } else if (nrow(object) > 1) {
@@ -274,7 +320,7 @@ simulate.plcp <- function(object,
             CI = CI,
             cores = cores,
             progress = progress,
-            save = save,
+            batch_progress = batch_progress,
             ...
         )
     }
@@ -286,13 +332,15 @@ simulate.plcp <- function(object,
 simulate.plcp_multi <- function(object,
                                 nsim,
                                 seed = NULL,
-                                formula,
+                                formula = NULL,
                                 satterthwaite = FALSE,
                                 CI = FALSE,
                                 cores = 1,
                                 progress = FALSE,
-                                save = FALSE,
+                                batch_progress = TRUE,
                                 ...) {
+
+    if(is.null(formula)) stop("Argument 'formula' is missing. Automatic formula creation is not yet supported for multi-sim objects")
     simulate.plcp(
         object = object,
         nsim = nsim,
@@ -302,7 +350,7 @@ simulate.plcp_multi <- function(object,
         formula = formula,
         cores = cores,
         progress = progress,
-        save = save,
+        batch_progress = batch_progress,
         ...
     )
 }
@@ -314,12 +362,17 @@ simulate.plcp_list <-
              satterthwaite = FALSE,
              CI = FALSE,
              cores = 1,
-             progress = FALSE,
+             progress = TRUE,
              save = FALSE,
+             save_folder = NULL,
+             save_folder_create = NULL,
+             cl = NULL,
              ...) {
         ptm <- proc.time()
         is_windows <- .Platform$OS.type == "windows"
+
         if (progress & !is_windows) {
+            check_installed("pbmcapply")
             res <-
                 pbmcapply::pbmclapply(
                     1:nsim,
@@ -331,18 +384,46 @@ simulate.plcp_list <-
                     mc.cores = cores,
                     ...
                 )
+        } else if (cores > 1) {
+            if(.Platform$OS.type == "unix" && !interactive()) {
+                res <- parallel::mclapply(X = 1:nsim,
+                                 FUN = simulate_,
+                                 paras = object,
+                                 formula = formula,
+                                 satterthwaite = satterthwaite,
+                                 CI = CI,
+                                 mc.cores = cores,
+                                 ...)
+            } else {
+                if(is.null(cl)) {
+                    cl <- parallel::makeCluster(min(cores, nsim))
+                    on.exit(parallel::stopCluster(cl))
+                }
+                parallel::clusterEvalQ(cl, expr =
+                                           suppressPackageStartupMessages(require(powerlmm, quietly = TRUE)))
+                clust_call <- (function(object, satterthwaite, formula, CI) {
+                    function(i) {
+                        simulate_(i, paras = object,
+                                  satterthwaite = satterthwaite,
+                                  formula = formula,
+                                  CI = CI)
+                    }
+                })(object, satterthwaite, formula, CI)
+
+                res <- parLapply(cl,
+                                 X = 1:nsim,
+                                 clust_call
+                                )
+            }
         } else {
-            res <-
-                parallel::mclapply(
-                    1:nsim,
-                    simulate_,
-                    paras = object,
-                    formula = formula,
-                    satterthwaite = satterthwaite,
-                    CI = CI,
-                    mc.cores = cores,
-                    ...
-                )
+            res <- lapply(1:nsim,
+                             FUN = simulate_,
+                             paras = object,
+                             formula = formula,
+                             satterthwaite = satterthwaite,
+                             CI = CI,
+                             ...)
+
         }
         time <- proc.time() - ptm
 
@@ -352,7 +433,8 @@ simulate.plcp_list <-
                 res = res,
                 paras = object,
                 nsim = nsim,
-                time = time["elapsed"]
+                time = time["elapsed"],
+                formula = formula
             )
         out <- munge_results(out)
         class(out) <- append(class(out), "plcp_sim")
@@ -368,17 +450,31 @@ simulate.plcp_data_frame <-
              CI = FALSE,
              cores,
              progress,
-             save = FALSE) {
-        if (save) {
-            output_dir <- format(Sys.time(), "%Y%m%d_%H%M")
-            output_dir <- paste("save/", output_dir, sep = "")
-            dir.create(output_dir)
+             batch_progress,
+             save = FALSE,
+             save_folder = "save",
+             save_folder_create = FALSE) {
 
-            cat("Each batch is being saved to: ", output_dir, "/\n", sep = "")
+        if (save) {
+            if(!dir.exists(save_folder)) {
+                if(save_folder_create) {
+                    message("Creating save_folder: ", file.path(save_folder))
+                    dir.create(file.path(save_folder))
+                } else {
+                    stop("Directory '", save_folder, "' does not exist.")
+                }
+            }
+
+            output_dir <- format(Sys.time(), "%Y%m%d_%H%M_%S")
+            output_dir <- file.path(save_folder, output_dir)
+            dir.create(output_dir)
+            if(!dir.exists(output_dir)) stop("Could not create save directory.")
+
+            cat("Each batch is being saved to: ", output_dir, "\n", sep = "")
         }
 
         res <- lapply(1:nrow(object), function(i) {
-            if (progress) {
+            if (batch_progress) {
                 cat("\rBatch: ",
                     i,
                     "/",
@@ -386,31 +482,45 @@ simulate.plcp_data_frame <-
                     rep(" ", options()$width - 13))
                 cat("\n")
             }
-
+            if(cores > 1 && interactive()) {
+                cl <- parallel::makeCluster(cores)
+                on.exit(parallel::stopCluster(cl))
+            } else cl <- NULL
             x <- simulate.plcp_list(
-                as.plcp_sim(object[i,]),
+                as.plcp(object[i,]),
                 nsim = nsim,
                 formula = formula,
                 satterthwaite = satterthwaite,
                 CI = CI,
                 cores = cores,
-                progress = progress
+                progress = progress,
+                cl = cl
             )
 
             if (save) {
-                f <- paste(output_dir, "/sim", i, ".rds", sep = "")
+                fname <- paste("sim", i, ".rds", sep ="")
+                f <- file.path(output_dir, fname)
                 saveRDS(x, f)
             }
             x
         })
-
+        if(save) saveRDS(object, file.path(output_dir, "paras.rds"))
         class(res) <- append(class(res), "plcp_multi_sim")
         res
     }
 simulate_ <- function(sim, paras, satterthwaite, CI, formula) {
-    d <- simulate_data(paras)
+    prepped <- prepare_paras(paras)
+
+    d <- simulate_data(prepped)
+    #saveRDS(d, file = paste0("/tmp/R/sim",sim, ".rds"))
+    tot_n <- length(unique(d[d$time == 0,]$subject))
     fit <- analyze_data(formula, d)
-    res <- extract_results(fit, CI, satterthwaite = satterthwaite)
+    res <- extract_results(fit = fit,
+                           CI = CI,
+                           satterthwaite = satterthwaite,
+                           df_bw = get_balanced_df(prepped),
+                           tot_n = tot_n)
+
     res
 }
 
@@ -461,7 +571,7 @@ check_formula_terms <- function(f) {
     x <- all.vars(f, functions = TRUE)
     ind <- x %in% c("y", "treatment", "time", "subject", "cluster")
     x <- x[!ind]
-    ind <- x %in% c("~", "+", "*", "(", "|", ":")
+    ind <- x %in% c("~", "+", "*", "(", "|", "||", ":")
     x <- x[!ind]
     if (length(x) > 0) {
         stop(
@@ -478,31 +588,30 @@ check_formula_terms <- function(f) {
 # analyze -----------------------------------------------------------------
 
 analyze_data <- function(formula, d) {
-
-        fit <-
-            lapply(formula, function(f)
-                tryCatch(
-                    #do.call(lme4::lmer, list(formula=f, data=d))
-                    lme4::lmer(formula = as.formula(f), data = d)
-                    )
+    fit <-
+        lapply(formula, function(f)
+            tryCatch(
+                #do.call(lme4::lmer, list(formula=f, data=d))
+                lme4::lmer(formula = as.formula(f), data = d)
                 )
-
-
-
+            )
     fit
 }
 
-extract_results <- function(fit, CI = FALSE, satterthwaite = FALSE) {
-    lapply(fit, extract_results_, CI = CI, satterthwaite = satterthwaite)
+extract_results <- function(fit, CI = FALSE, satterthwaite = FALSE, df_bw, tot_n) {
+    lapply(fit, extract_results_,
+           CI = CI,
+           satterthwaite = satterthwaite,
+           df_bw = df_bw,
+           tot_n = tot_n)
 }
 extract_random_effects <- function(fit) {
     x <- as.data.frame(lme4::VarCorr(fit))
-
     vcovs <- x[is.na(x$var2),]
     vcovs$parameter <- paste(vcovs$grp, vcovs$var1, sep = "_")
     vcovs$sdcor <- NULL
 
-    correlations <-  x[!is.na(x$var2),]
+    correlations <-  x[!is.na(x$var2), ]
     correlations$parameter <- paste(correlations$grp,
                                     correlations$var1,
                                     correlations$var2,
@@ -513,20 +622,20 @@ extract_random_effects <- function(fit) {
 
     rbind(vcovs, correlations)
 }
-add_p_value <- function(fit, satterthwaite) {
+add_p_value <- function(fit, satterthwaite, df_bw = NULL) {
     tmp <- tryCatch(summary(fit))
     tmp <- tmp$coefficients
 
     ## satterthwaite
     if(satterthwaite) {
-
         ff <- rownames(tmp)
         ind <- which(ff %in%  c("treatment:time", "time:treatment"))
 
         L <- rep(0, length(ff))
         L[ind] <- 1
 
-        satt <- tryCatch(lmerTest::calcSatterth(fit, L),  error = function(e) { NA })
+        satt <- suppressMessages(tryCatch(lmerTest::calcSatterth(fit, L),
+                                          error = function(e) { NA }))
 
         df <- rep(NA, length(ff))
         p <- rep(NA, length(ff))
@@ -535,7 +644,10 @@ add_p_value <- function(fit, satterthwaite) {
             df[ind] <- satt$denom
             p[ind] <- satt$pvalue
         }
-
+        if(is.na(p[ind])) {
+            tval <- tmp[ind, "t value"]
+            p[ind] <- 2*(1 - pt(abs(tval), df = df_bw))
+        }
 
         res <- list("df" = df,
                     "p" = p)
@@ -548,9 +660,21 @@ add_p_value <- function(fit, satterthwaite) {
     res
 
 }
-extract_results_ <- function(fit, CI, satterthwaite) {
+fix_sath_NA_pval <- function(x, df) {
+    ind <- is.na(x$pval)
+    tmp <- x[ind, ]
+    t <- with(tmp, estimate/se)
+    pval <- 2*(1 - pt(abs(t), df = df))
+
+    x[ind, "pval"] <- pval
+
+    x
+}
+extract_results_ <- function(fit, CI, satterthwaite, df_bw, tot_n) {
     se <- sqrt(diag(vcov(fit)))
-    tmp_p <- add_p_value(fit, satterthwaite)
+    tmp_p <- add_p_value(fit = fit,
+                         satterthwaite = satterthwaite,
+                         df_bw = df_bw)
     FE <- data.frame(
         "estimate" = lme4::fixef(fit),
         "se" = se,
@@ -558,13 +682,16 @@ extract_results_ <- function(fit, CI, satterthwaite) {
         "df" = tmp_p$df
     )
 
-
     rnames <- rownames(FE)
     parm_id <- which(c("time:treatment", "treatment:time") %in% rnames)
     CI_parm <- c("time:treatment", "treatment:time")[parm_id]
     rnames <- gsub("treatment:time", "time:treatment", rnames)
     rownames(FE) <- NULL
-    FE <- cbind(data.frame(parameter = rnames), FE)
+    FE <- cbind(data.frame(parameter = rnames,
+                           stringsAsFactors = FALSE),
+                FE)
+
+    FE[FE$parameter == "time:treatment", "df_bw"] <- df_bw
 
     if (CI) {
         CI <- tryCatch(stats::confint(fit, parm = CI_parm),
@@ -578,87 +705,92 @@ extract_results_ <- function(fit, CI, satterthwaite) {
         FE[FE$parameter == "time:treatment", "CI_wald_upr"] <- CI_wald[2]
 
     }
-
-
     RE <- extract_random_effects(fit)
 
     conv <- is.null(fit@optinfo$conv$lme4$code)
 
     list("RE" = RE,
          "FE" = FE,
+         "tot_n" = tot_n,
          "conv" = conv)
 }
 
-
-
-
-
-.rename_rr <- function(.x, match, new) {
+rename_rr_ <- function(.x, match, new) {
     .x[.x$parameter %in% match, "parameter"] <- new
 
     .x
 }
 rename_random_effects <- function(.x) {
-    .x <- .rename_rr(
+    .x <- rename_rr_(
         .x,
         match = c(
             "cluster_time",
             "cluster.1_time",
             "cluster_time:treatment",
-            "cluster_treatment:time"
+            "cluster_treatment:time",
+            "cluster.1_treatment:time"
         ),
         new = "cluster_slope"
     )
 
-    .x <- .rename_rr(.x,
+    .x <- rename_rr_(.x,
                      match = "Residual_NA",
                      new = "error")
 
-    .x <- .rename_rr(.x,
+    .x <- rename_rr_(.x,
                      match = c("subject_(Intercept)"),
                      new = "subject_intercept")
 
-    .x <- .rename_rr(.x,
-                     match = c("cluster_(Intercept)"),
+    .x <- rename_rr_(.x,
+                     match = c("cluster_(Intercept)",
+                               "cluster_treatment"),
                      new = "cluster_intercept")
 
-    .x <- .rename_rr(.x,
+    .x <- rename_rr_(.x,
                      match = c("subject.1_time", "subject_time"),
                      new = "subject_slope")
 
 
-    .x <- .rename_rr(.x,
+    .x <- rename_rr_(.x,
                      match = "subject_(Intercept)_time",
                      new = "cor_subject")
 
-    .x <- .rename_rr(.x,
+    .x <- rename_rr_(.x,
                      match = c("cluster_(Intercept)_time",
                                "cluster_(Intercept)_treatment:time",
-                               "cluster_(Intercept)_time:treatment"),
+                               "cluster_(Intercept)_time:treatment",
+                               "cluster_treatment_treatment:time"),
                      new = "cor_cluster")
 
 }
+order_model_lists <- function(models, RE, FE, tot_n, convergence) {
+    x <- list()
+    for (i in seq_along(models)) {
+        x[[i]] <- list("RE" = RE[[i]],
+                       "FE" = FE[[i]],
+                       "tot_n" = tot_n[[i]],
+                       "convergence" = convergence[[i]])
+    }
+    names(x) <- models
 
+    x
+}
 munge_results <- function(res) {
     x <- res$res
 
     models <- names(x[[1]])
     RE <- lapply(models, munge_results_, x, "RE")
     FE <- lapply(models, munge_results_, x, "FE")
-
     convergence <- lapply(models, munge_results_, x, "conv")
-
+    tot_n <- lapply(models, munge_results_, x, "tot_n")
     RE <- lapply(RE, rename_random_effects)
 
-    x <- list()
+    x <- order_model_lists(models,
+                           RE = RE,
+                           FE = FE,
+                           tot_n = tot_n,
+                           convergence = convergence)
 
-    for (i in seq_along(models)) {
-        x[[i]] <- list("RE" = RE[[i]],
-                       "FE" = FE[[i]],
-                       "convergence" = convergence[[i]])
-    }
-
-    names(x) <- models
     res$res <- x
 
     res
@@ -677,42 +809,98 @@ munge_results_ <- function(model, res, effect) {
 
 
 # Print -------------------------------------------------------------------
-print_model <- function(i, x) {
+print_model <- function(i, x, digits) {
     models <- names(x)
     cat("Model: ", models[i], "\n")
     cat("  Random effects\n\n")
     print.data.frame(x[[i]]$RE,
                      row.names = FALSE,
-                     digits = 3,
+                     digits = digits,
                      quote = FALSE)
     cat("\n  Fixed effects\n\n")
-    print.data.frame(x[[i]]$FE, row.names = FALSE, digits = 3)
+    print.data.frame(x[[i]]$FE, row.names = FALSE, digits = digits)
     cat("---\n")
 
 }
+
+#' @importFrom stats median
+tot_n_ <- function(x) {
+
+    x <- as.numeric(x)
+    if(length(unique(x)) > 1) {
+        x_mean <- mean(x)
+        x_median <- median(x)
+        x_sd <- sd(x)
+
+        x <- paste(round(x_mean, 1),
+                   "(mean)",
+                   round(x_median, 1),
+                   "(median)",
+                   round(x_sd, 2),
+                   "(SD)")
+    }
+
+    x
+}
+
+print_test_NA <- function(i, x) {
+    mod_name <- names(x[i])
+    Satt_NA <- x[[i]]$Satt_NA
+    CI_NA <- x[[i]]$CI_NA
+    non_convergence <- 1 - x[[i]]$convergence
+
+    mess <- NULL
+    if(Satt_NA > 0) {
+        message("[Model: ", mod_name, "] ", round(Satt_NA, 4) * 100, "% of the Satterthwaite calculations failed")
+    }
+    if(CI_NA > 0) {
+        message("[Model: ", mod_name, "] ", round(CI_NA, 4) * 100, "% of the profile likelihood CIs failed")
+    }
+    if(non_convergence > 0) {
+        message("[Model: ", mod_name, "] ", round(non_convergence, 4) * 100, "% of the models threw convergence warnings")
+    }
+}
+
 #' Print method for \code{summary.plcp_sim}-objects
 #' @param x An object of class \code{plcp_sim_summary}
+#' @param digits number of significant digits.
 #' @param ... Optional arguments.
 #' @method print plcp_sim_summary
 #' @export
-print.plcp_sim_summary <- function(x, ...) {
+print.plcp_sim_summary <- function(x, digits = 2, ...) {
     res <- x
     #print
     x <- res$summary
 
-    tot_n <- get_tot_n(res$paras)$total
+    tot_n <- tot_n_(res$tot_n)
+    if(length(unique(tot_n)) == 1) tot_n <- unique(tot_n)
     n3 <- get_n3(res$paras)
-    lapply(seq_along(x), print_model, x)
-    cat("Number of simulations:", res$nsim)
+    n2 <- get_n2(res$paras)
+    if(is.per_treatment(res$paras$n2)) {
+        n2$treatment <- deparse_n2(n2$treatment)
+        n2$control <- deparse_n2(n2$control)
+        n2 <- unlist(n2)
+    } else n2 <- deparse_n2(n2$treatment)
+
+
+    if(is.unequal_clusters(res$paras$n2)) {
+        n2_lab <- "\nSubjects per cluster: "
+        n2 <- print_per_treatment(prepare_print_n2(res$paras),
+                                  hanging = 23,
+                                  n2 = TRUE)
+    } else {
+        n2_lab <- "\nSubjects per cluster (n2 x n3): "
+        n2 <- print_per_treatment(prepare_print_n2(res$paras),
+                                  hanging = 33,
+                                  n2 = TRUE)
+    }
+    lapply(seq_along(x), print_model, x, digits = digits)
+    cat("Number of simulations:", res$nsim, " | alpha: ", res$alpha)
     cat("\nTime points (n1): ", res$paras$n1)
-    cat(" | Subjects per cluster (n2): ", unlist(res$paras$n2))
-    cat(" | Clusters per treatment (n3): ", unlist(n3[c("treatment", "control")]))
-    cat("\nTotal number of subjects: ", tot_n)
-    convergence <- lapply(x, function(d)
-        d$convergence)
-    convergence <- unlist(convergence)
-    cat("\nConvergence: ",
-        paste(convergence * 100, "%", collapse = ", "))
+    cat(n2_lab, n2)
+    cat("\nTotal number of subjects: ", tot_n, "\n")
+    lapply(seq_along(x), print_test_NA, x = x)
+    if(any(x$correct$RE$is_NA > 0)) warning("Some estimated random effects were removed due to being NA.", call. = FALSE)
 }
 
 #' Print method for \code{simulate.plcp_multi}-objects
@@ -726,9 +914,17 @@ print.plcp_multi_sim <- function(x, ...) {
     nmulti <- length(x)
     cat("# ", nmulti, " x ", nsim, "grid of simulations")
     cat("\n")
+    cat("# lmer formula(s) used: \n")
+    cat_formulas(x[[1]]$formula)
     cat("# Object size:", format(object.size(x), units = "auto"))
+    cat("\n")
 }
 
+cat_formulas <- function(f) {
+    nams <- names(f)
+    names
+    cat(paste("#    '", nams,"': ", f, sep = ""), sep = "\n")
+}
 #' Print method for \code{simulate.plcp}-objects
 #' @param x An object created with \code{\link{simulate.plcp}}
 #' @param ... Optional arguments.
@@ -742,7 +938,10 @@ print.plcp_sim <- function(x, ...) {
         "Use summary() to view results."
     )
     cat("\n")
+    cat("# lmer formula(s) used: \n")
+    cat_formulas(x$formula)
     cat("# Object size:", format(object.size(x), units = "auto"))
+    cat("\n")
     invisible(x)
 }
 
@@ -756,7 +955,8 @@ print.plcp_sim <- function(x, ...) {
 
 #' Summarize the results from a simulation of a single study design-object
 #' @param object A \code{simulate.plcp}-object
-#'
+#' @param alpha Indicates the significance level. Default is 0.05 (two-tailed),
+#' one-tailed tests are not yet implemented.
 #' @param ... Currently not used
 #'
 #' @return Object with class \code{plcp_sim_summary}. It contains
@@ -779,16 +979,111 @@ print.plcp_sim <- function(x, ...) {
 #'
 #' @method summary plcp_sim
 #' @export
-summary.plcp_sim <- function(object, ...) {
+summary.plcp_sim <- function(object, alpha = 0.05, ...) {
     res <- object
-    x <- lapply(res$res, summary_.plcp_sim, paras = res$paras)
+    x <- lapply(res$res, summary_.plcp_sim,
+                paras = res$paras,
+                alpha = alpha)
     x <- list(summary = x,
               nsim = res$nsim,
-              paras = res$paras)
+              paras = res$paras,
+              tot_n = x[[1]]$tot_n,
+              alpha = alpha)
     class(x) <- append("plcp_sim_summary", class(x))
     x
 }
-summary_.plcp_sim  <- function(res, paras) {
+summarize_RE <- function(res, theta) {
+    d <- res$RE
+    parms <- unique(d$parameter)
+    tmp <- vector("list", length(parms))
+    for(i in seq_along(parms)) {
+        para <- parms[[i]]
+        vcov <- d[d$parameter == para, "vcov"]
+        theta_i <- theta[theta$parameter == para, "theta"]
+        est <- mean(vcov, na.rm=TRUE)
+        res <- data.frame(
+            parameter = para,
+            M_est = est,
+            theta = theta_i,
+            est_rel_bias = get_RB(est, theta_i),
+            prop_zero = mean(is_approx(vcov, 0), na.rm=TRUE),
+            is_NA = mean(is.na(vcov))
+        )
+        if (para %in% c("cor_subject", "cor_cluster")) {
+            res$prop_zero <- mean(is_approx(abs(vcov), 1), na.rm=TRUE)
+        }
+        tmp[[i]] <- res
+    }
+    RE <- do.call(rbind, tmp)
+
+    RE
+}
+summarize_FE <- function(res, theta, alpha) {
+    d <- res$FE
+    parms <- unique(d$parameter)
+    tmp <- vector("list", length(parms))
+    for(i in seq_along(parms)) {
+        para <- parms[[i]]
+        ind <- d$parameter == para
+        se <- d[ind, "se"]
+        estimate <- d[ind, "estimate"]
+        pval <- d[ind, "pval"]
+        df <- d[ind, "df"]
+        df_bw <- d[ind, "df_bw"]
+
+        if(any(!is.na(pval))) {
+            Satt_NA <- mean(is.na(df))
+        } else Satt_NA <- NA
+
+       # para <- i
+        #theta_i <- theta[[i]]
+        pvals_bw <- get_p_val_df(t = estimate/se,
+                                 df = df_bw,
+                                 parameter = para)
+        theta_i <- theta[[i]]
+        tmp[[i]] <- data.frame(
+                    parameter = para,
+                    M_est = mean(estimate),
+                    theta = theta_i,
+                    M_se = mean(se),
+                    SD_est = sd(estimate),
+                    Power = mean(get_cover(estimate, se, alpha = alpha)),
+                    Power_bw = mean(pvals_bw < alpha),
+                    Power_satt = mean(pval < alpha, na.rm = TRUE),
+                    Satt_NA = Satt_NA
+                )
+
+
+    }
+    FE <- do.call(rbind, tmp)
+
+    FE
+}
+summarize_CI <- function(res, theta) {
+    d <- res$FE
+    parms <- unique(res$FE$parameter)
+    tmp <- vector("list", length(parms))
+    for(i in seq_along(parms)) {
+        para <- parms[[i]]
+        ind <- d$parameter == para
+        CI_lwr <- d[ind, "CI_lwr"]
+        CI_upr <- d[ind, "CI_upr"]
+        CI_wald_lwr <- d[ind, "CI_wald_lwr"]
+        CI_wald_upr <- d[ind, "CI_wald_upr"]
+
+        tmp[[i]] <- data.frame(
+                    parameter = para,
+                    CI_cover = mean(CI_lwr < theta &
+                                         CI_upr > theta, na.rm=TRUE),
+                    CI_Wald_cover = mean(CI_wald_lwr < theta &
+                                             CI_wald_upr > theta, na.rm=TRUE),
+                    CI_NA = mean(is.na(CI_lwr)))
+    }
+    CI_cov <- do.call(rbind, tmp)
+
+    CI_cov
+}
+summary_.plcp_sim  <- function(res, paras, alpha) {
     RE_params <-
         data.frame(
             parameter = c(
@@ -811,36 +1106,12 @@ summary_.plcp_sim  <- function(res, paras) {
             )
         )
 
+    RE <- summarize_RE(res, theta = RE_params)
 
-    RE <- lapply(unique(res$RE$parameter), function(i, .d, theta) {
-        vcov <-  .d[.d$parameter == i, "vcov"]
-
-        para <- i
-        theta <- theta[theta$parameter == i, "theta"]
-        res <- data.frame(
-            parameter = para,
-            M_est = mean(vcov),
-            theta = theta,
-            prop_zero = mean(abs(vcov - 0) < .Machine$double.eps ^
-                                 0.5)
-        )
-        if (para %in% c("cor_subject", "cor_cluster")) {
-            res$prop_zero <- mean(abs(abs(vcov) - 1) < .Machine$double.eps ^ 0.5)
-        }
-        res
-
-    }, .d = res$RE, theta = RE_params)
-
-    RE <- do.call(rbind, RE)
-
-    # df
+    # falseconv
     false_conv <-
         res$RE[res$RE$parameter == "cluster_slope", "vcov"]
-    false_conv <-
-        mean(abs(false_conv - 0 < .Machine$double.eps ^ 0.5))
-
-
-    df <- ifelse(false_conv, get_tot_n(paras) - 2, get_n3(paras) - 2)
+    false_conv <- mean(is_approx(false_conv, 0))
 
 
     theta = list(
@@ -849,54 +1120,26 @@ summary_.plcp_sim  <- function(res, paras) {
         "time" = paras$fixed_slope,
         "time:treatment" = get_slope_diff(paras) / paras$T_end
     )
-    FE <- lapply(unique(res$FE$parameter), function(i, .d, theta) {
-        se <- .d[.d$parameter == i, "se"]
-        estimate <- .d[.d$parameter == i, "estimate"]
-        pval <- .d[.d$parameter == i, "pval"]
-        df <- .d[.d$parameter == i, "df"]
+    FE <- summarize_FE(res = res,
+                       theta = theta,
+                       alpha = alpha)
 
-        para <- i
-        theta <- theta[[i]]
-        data.frame(
-            parameter = i,
-            M_est = mean(estimate),
-            M_se = mean(se),
-            SD_est = sd(estimate),
-            Power = mean(get_cover(estimate, se)),
-            Power_satt = mean(pval < 0.05, na.rm = TRUE),
-            Satt_NA = mean(is.na(pval))
-        )
-    }, .d = res$FE, theta = theta)
-
-    FE <- do.call(rbind, FE)
-
-    ## Fix this, remove dplyr
-    if ("CI_lwr" %in% colnames(res$FE)) {
-        diff <- get_slope_diff(paras) / paras$T_end
-
-        CI_cov <- lapply(unique(res$FE$parameter), function(i, .d, diff) {
-            CI_lwr <- .d[.d$parameter == i, "CI_lwr"]
-            CI_upr <- .d[.d$parameter == i, "CI_upr"]
-            CI_wald_lwr <- .d[.d$parameter == i, "CI_wald_lwr"]
-            CI_wald_upr <- .d[.d$parameter == i, "CI_wald_upr"]
-
-            para <- i
-            data.frame(
-                parameter = i,
-                CI_cover =  mean(CI_lwr < diff &
-                                     CI_upr > diff, na.rm=TRUE),
-                CI_Wald_cover = mean(CI_wald_lwr < diff &
-                                         CI_wald_upr > diff, na.rm=TRUE))
-
-        }, .d = res$FE, diff = diff)
-
-        CI_cov <- do.call(rbind, CI_cov)
-
-        FE$CI_Cover <- CI_cov$CI_cover
-        FE$CI_Wald_cover <- CI_cov$CI_Wald_cover
+    if(all(is.na(res$FE$pval))) {
+        Satt_NA <- 0
+    } else {
+        Satt_NA <- FE[FE$parameter == "time:treatment", "Satt_NA"]
     }
 
+    FE$Satt_NA <- NULL
 
+
+    CI_NA <- 0
+    if ("CI_lwr" %in% colnames(res$FE)) {
+        CI_cov <- summarize_CI(res, theta[["time:treatment"]])
+        FE$CI_Cover <- CI_cov$CI_cover
+        CI_NA <- CI_cov[CI_cov$parameter == "time:treatment", "CI_NA"]
+        FE$CI_Wald_cover <- CI_cov$CI_Wald_cover
+    }
     FE_eff <- c("(Intercept)",
                 "treatment",
                 "time",
@@ -907,27 +1150,30 @@ summary_.plcp_sim  <- function(res, paras) {
                         which(FE$parameter == i), numeric(1))
     FE <- FE[ind,]
 
-    convergence <- mean(res$convergence[[2]])
+    convergence <- mean(res$convergence)
 
     list("RE" = RE,
          "FE" = FE,
-         "convergence" = convergence)
+         "tot_n" = res$tot_n,
+         "convergence" = convergence,
+         "Satt_NA" = Satt_NA,
+         "CI_NA" = CI_NA)
 }
 
 
 # multi-sim ---------------------------------------------------------------
 
 
-as.plcp_sim <- function(object) {
-    UseMethod("as.plcp_sim")
-}
-
-as.plcp_sim.data.frame <- function(object) {
-    object <- as.list(object)
-    class(object) <- append("plcp", class(object))
-
-    object
-}
+# as.plcp_sim <- function(object) {
+#     UseMethod("as.plcp_sim")
+# }
+#
+# as.plcp_sim.data.frame <- function(object) {
+#     object <- as.list(object)
+#     class(object) <- append("plcp", class(object))
+#
+#     object
+# }
 
 
 #' Summarize simulations based on a combination of multiple parameter values
@@ -939,6 +1185,8 @@ as.plcp_sim.data.frame <- function(object) {
 #' "random" or "fixed".
 #' @param model Specifies which model should be summarized. Used when models are
 #' simulated from formulas named "correct" and "wrong".
+#' @param alpha Indicates the significance level. Default is 0.05 (two-tailed),
+#' one-tailed tests are not yet implemented.
 #' @param ... Optional arguments.
 #'
 #' @method summary plcp_multi_sim
@@ -969,7 +1217,9 @@ as.plcp_sim.data.frame <- function(object) {
 summary.plcp_multi_sim <- function(object,
                                    para = "time:treatment",
                                    type = "fixed",
-                                   model = "correct", ...) {
+                                   model = "correct",
+                                   alpha = 0.05,
+                                   ...) {
     res <- object
     if (!model %in% (names(res[[1]][[1]])))
         stop("No model named: ", model)
@@ -980,7 +1230,7 @@ summary.plcp_multi_sim <- function(object,
         stop("Para should be one of: 'intercept' 'time', 'treatment', 'time:treatment'")
     }
     if (type == "fixed") {
-        out <- lapply(res, summary_fixed.plcp_multi_sim, para, model)
+        out <- lapply(res, summary_fixed.plcp_multi_sim, para, model, alpha = alpha)
     } else {
         out <- lapply(res, summary_random.plcp_multi_sim, para, model)
     }
@@ -994,23 +1244,29 @@ summary.plcp_multi_sim <- function(object,
     out
 }
 
+
+#' Print method for \code{summary.plcp_multi_sim}-objects
+#' @param x An object of class \code{plcp_multi_sim_summary}
+#' @param digits number of significant digits.
+#' @param ... Optional arguments.
 #' @method print plcp_multi_sim_summary
 #' @export
-print.plcp_multi_sim_summary <- function(x, ...) {
+print.plcp_multi_sim_summary <- function(x, digits = 2, ...) {
     model <- attr(x, "model")
     type <- attr(x, "type")
     nsim <- attr(x, "nsim")
     x <- as.data.frame(x)
     cat("Model: ", model, "| Type:", type, "\n")
     cat("---\n")
-    print(x, digits = 3)
+    print(x, digits = digits)
     cat("---\n")
-    cat("nsim: ", nsim)
+    cat("nsim: ", nsim, "\n")
+    if(any(x$is_NA > 0)) warning("Some simulations had NA estimates that was removed.", call. = FALSE)
     invisible(x)
 }
 
 ## random effect
-summary_fixed.plcp_multi_sim <- function(res, para, model) {
+summary_fixed.plcp_multi_sim <- function(res, para, model, alpha) {
 
     theta <- switch(
         para,
@@ -1028,7 +1284,14 @@ summary_fixed.plcp_multi_sim <- function(res, para, model) {
     se_est <- mean(out$se)
     se_hat <- sd(out$estimate)
 
-    power <- mean(get_cover(out$estimate, out$se))
+    power <- mean(get_cover(out$estimate,
+                            out$se,
+                            alpha = alpha))
+    power_bw <- get_p_val_df(t = out$estimate/out$se,
+                             df = out$df_bw,
+                             parameter = para)
+    Satt_NA <-  mean(is.na(out$df))
+
     out <- with(
         out,
         data.frame(
@@ -1042,8 +1305,9 @@ summary_fixed.plcp_multi_sim <- function(res, para, model) {
             SD_est = se_hat,
             se_rel_bias = (se_est - se_hat) / se_hat,
             Power = power,
-            Power_satt = mean(out$pval < 0.05, na.rm = TRUE),
-            Satt_NA = mean(is.na(out$pval))
+            Power_bw = mean(power_bw < alpha),
+            Power_satt = mean(out$pval < alpha, na.rm = TRUE),
+            Satt_NA = Satt_NA
 
         )
     )
@@ -1063,37 +1327,51 @@ summary_random.plcp_multi_sim <- function(res, para, model) {
 
     theta <- switch(
         para,
-        "subject_intercept" = res$paras$sigma_subject_intercept,
-        "subject_slope" = res$paras$sigma_subject_slope,
-        "cluster_slope" = res$paras$sigma_cluster_slope,
-        "error" = res$paras$sigma_error
+        "subject_intercept" = res$paras$sigma_subject_intercept^2,
+        "subject_slope" = res$paras$sigma_subject_slope^2,
+        "subject_intercept" = res$paras$sigma_subject_intercept^2,
+        "cor_subject" = res$paras$cor_subject,
+        "cluster_intercept" = res$paras$sigma_cluster_intercept^2,
+        "cluster_slope" = res$paras$sigma_cluster_slope^2,
+        "cor_cluster" = res$paras$cor_cluster,
+        "error" = res$paras$sigma_error^2
     )
 
     out <- res$res[[model]]$RE
     out <- out[out$parameter == para,]
 
-    est <- mean(out$vcov)
+    vcov <- out$vcov
+    est <- mean(vcov, na.rm = TRUE)
     out <- data.frame(
         parameter = para,
         M_est = est,
-        theta = theta ^ 2,
-        est_rel_bias = (est - theta ^ 2) / theta ^ 2,
-        prop_zero = mean(abs(out$vcov - 0 < .Machine$double.eps ^
-                                 0.5))
+        theta = theta,
+        est_rel_bias = get_RB(est, theta),
+        prop_zero = mean(is_approx(vcov, 0), na.rm=TRUE),
+        is_NA = mean(is.na(vcov))
     )
-
-
-    #out <- cbind(get_rel_bias(res$para), out)
-    #out <- dplyr::select(out, -approx_rel_bias)
+    if (para %in% c("cor_subject", "cor_cluster")) {
+        out$prop_zero <- mean(is_approx(abs(vcov), 1), na.rm=TRUE)
+    }
 
     out
 
 }
 
+
+get_RB <- function(est, theta) {
+    if(theta == 0) {
+        RB <- (est - theta)
+    } else {
+        RB <- (est - theta) / theta
+    }
+    RB
+}
+
 # power -------------------------------------------------------------------
-get_cover <- function(est, se) {
-    # 95 % CI cover
-    abs(est) - qnorm(0.975) * se > 0
+get_cover <- function(est, se, alpha) {
+    # CI cover
+    abs(est) - qnorm(1 - (alpha/2)) * se > 0
 }
 
 get_p_val_df <- function(t, df, parameter) {

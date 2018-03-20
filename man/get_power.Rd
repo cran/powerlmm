@@ -4,10 +4,24 @@
 \alias{get_power}
 \title{Calculate power for two- and three-level models with missing data.}
 \usage{
-get_power(object, ...)
+get_power(object, df = "between", alpha = 0.05, progress = TRUE, R = 1L,
+  cores = 1L, ...)
 }
 \arguments{
 \item{object}{An object created by \code{\link{study_parameters}}}
+
+\item{df}{Either "between" or, "satterth" for Satterthwaite's DF approximation.
+Also accepts a \code{numeric} value which will be used as DF.}
+
+\item{alpha}{The alpha level, defaults to 0.05.}
+
+\item{progress}{\code{logical}; displays a progress bar when > 1 power analysis
+is performed.}
+
+\item{R}{An \code{integer} indicating how many realizations to base power on.
+Useful when dropout or cluster sizes are sampled (i.e. are random variables).}
+
+\item{cores}{An \code{integer} indicating how many CPU cores to use.}
 
 \item{...}{Other potential arguments; currently used to pass progress bar from
 Shiny}
@@ -22,7 +36,8 @@ single set of parameters or a combination of multiple values. Has class
 Calculate power for two- and three-level models with missing data.
 }
 \details{
-\bold{Calculations of standard errors}
+\bold{Calculation of the standard errors}
+
 Designs with equal cluster sizes, and with no missing data, uses standard closed form equations to
 calculate standard errors. Designs with missing data or unequal cluster sizes uses more
 computationally intensive linear algebra solutions.
@@ -31,7 +46,28 @@ To see a more detailed explanation of the calculations, type
 \code{vignette("technical", package = "powerlmm")}.
 
 \bold{Degrees of freedom}
-Power is calculated using the \emph{t} distribution with non-centrality parameter \eqn{d/se}.
+
+Power is calculated using the \emph{t} distribution with non-centrality parameter \eqn{b/se},
+and DFs are either based on a the between-subjects or between-cluster \emph{dfs}, or using Satterthwaite's approximation.
+For the "between" method, \eqn{N_3 - 2} is used for three-level models, and \eqn{N_2 - 2} for two-level models,
+where \eqn{N_3} and \eqn{N_2} is the total number of clusters and subjects in both arms.
+
+\bold{N.B} Satterthwaite's method will be RAM and CPU intensive for large sample sizes.
+The computation time will depend mostly on \code{n1} and \code{n2}. For instance, for a fully nested model with
+\code{n1 = 10}, \code{n2 = 100}, \code{n3 = 4}, computations will likely take 30-60 seconds.
+
+\bold{Cluster sizes or dropout pattern that are random (sampled)}
+
+If \code{deterministic_dropout = FALSE} the proportion that dropout at each time point will be sampled
+from a multinomial distribution. However, if it is \code{TRUE}, the proportion of subjects that dropout will be non-random,
+but which subjects dropout will still be random. Both scenarios often lead to small variations in the estimated power. Moreover,
+using cluster sizes that are random, \code{unequal_clusters(func = ...)}, can lead to large variations in power
+for a single realization of cluster sizes. In both scenarios the expected power can be calculated by repeatedly recalculating
+power for different new realizations of the random variables. This is done be using the argument \code{R} -- power, sample size, and DFs,
+is then reported by averaging over the \code{R} realizations.
+
+If power varies over the \code{R} realization then the Monte Carlo SE is also reported.
+The SE is based on the normal approximation, i.e. sd(power_i)/sqrt(R).
 }
 \examples{
 # Two-level model
@@ -83,6 +119,9 @@ paras <- study_parameters(n1 = 11,
                           cohend = -0.8)
 
 get_power(paras)
+
+# Satterthwaite DFs
+get_power(paras, df = "satterthwaite")
 }
 \seealso{
 \code{\link{study_parameters}}, \code{\link{simulate.plcp}}, \code{\link{get_power_table}}
