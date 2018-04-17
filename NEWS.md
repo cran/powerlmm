@@ -1,3 +1,16 @@
+
+# Changes in version 0.2.0.9000
+
+## New features
+* More flexible effect size specification. This version adds support for:
+   - unstandardized effect sizes, e.g. `effect_size = 5`,
+   - and Cohen's d effect sizes that are standardized 
+   using either the pre- or posttest SD, or the random slope SD,
+   e.g. `effect_size = cohend(0.5, "posttest_sd")`
+
+## Other changes
+* Support for lmerTest 3.0.
+
 # Changes in version 0.2.0
 ## New features
 * Analytical power calculations now support using Satterthwaite's degrees of

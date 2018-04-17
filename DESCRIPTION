@@ -1,15 +1,16 @@
 Package: powerlmm
 Type: Package
 Title: Power Analysis for Longitudinal Multilevel Models
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: person("Kristoffer", "Magnusson", email = "hello@kristoffer.email",
     role = c("aut", "cre"))
-Description: Calculate power for two- and three-level multilevel longitudinal
-    studies with missing data. Both the third-level factor (e.g. therapists,
-    schools, or physicians), and the second-level factor (e.g. subjects),
-    can be assigned random slopes. Studies with partially nested designs,
-    unequal cluster sizes, unequal allocation to treatment arms, and different
-    dropout patterns per treatment are supported. For all designs power can be
+Description: Calculate power for the 'time x treatment' effect
+    in two- and three-level multilevel longitudinal studies with missing data.
+    Both the third-level factor (e.g. therapists, schools, or physicians),
+    and the second-level factor (e.g. subjects), can be assigned random slopes.
+    Studies with partially nested designs, unequal cluster sizes,
+    unequal allocation to treatment arms, and different dropout patterns
+    per treatment are supported. For all designs power can be
     calculated both analytically and via simulations. The analytical
     calculations extends the method described in Galbraith et al. (2002)
     <doi:10.1016/S0197-2456(02)00205-2>, to three-level models.
@@ -30,8 +31,8 @@ Suggests: testthat, dplyr, tidyr, knitr, rmarkdown, pbmcapply (>= 1.1),
 ByteCompile: true
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2018-03-20 15:33:55 UTC; kris
+Packaged: 2018-04-17 18:05:16 UTC; kris
 Author: Kristoffer Magnusson [aut, cre]
 Maintainer: Kristoffer Magnusson <hello@kristoffer.email>
 Repository: CRAN
-Date/Publication: 2018-03-20 19:08:03 UTC
+Date/Publication: 2018-04-17 18:28:35 UTC
