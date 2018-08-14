@@ -1,5 +1,31 @@
 
-# Changes in version 0.2.0.9000
+# Changes in version 0.4.0
+
+This version substantially improves the `simulate` method.
+
+## New features
+* The simulate method is now much more flexible. New features include:
+   - Compare more than 2 model formulas (#2).
+   - Apply a data transformation during simulation; `sim_formula(..., data_transform = func)`.
+     As an example `transform_to_posttest` is included.
+   - Choose which parameters to test; `sim_formula(..., test = "treatment")`
+   - Fit OLS models. If a model formula is supplied that contain no random effects the
+   model is fit using OLS `lm()`. If this is combined with the `transform_to_posttest` the
+   longitudinal model can be compared to a cross-sectional model, e.g. ANCOVA. 
+   - Investigate LRT model selection of the random effects. Nested random effect models
+   can be tested using LRT, and results from the "best" model is returned. The log-likelihood 
+   is saved during each simulation, so the model selection can be done as a
+   post-processing step; `summary.plcp_sim(..., model_selection = "FW", LRT_alpha = 0.25)`.
+   
+## Breaking canges
+* `simulate(formula = x)` must now be created using the new functions `sim_formula`, or
+`sim_formula_compare`, and can no longer be a named list or a character vector. 
+
+## Bug fixes
+* `summary.plcp_sim()` now show fixed effect `theta`s in the correct order, thanks to
+GitHub user Johnzav888 (#10).
+
+# Changes in version 0.3.0
 
 ## New features
 * More flexible effect size specification. This version adds support for:
